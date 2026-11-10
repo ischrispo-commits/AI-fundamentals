@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: w05-d02-nccl-handout
+expected_outcome: |
+  使用者沒有說「講義」也沒有給 W05D02 代碼，但 skill 應觸發並對應到 weekly-day-plan 的 W5 D2，
+  產生 00_study_plan/handouts/w05/d02_<slug>.md；因第 5 週尚無 k_points.md，應建立
+  00_study_plan/quizzes/week05/k_points.md 並寫入 6～8 條 W05D02-Kn；所有數字來自
+  03_ai_cluster_ops/03_nccl/01_nccl_theory.md 或 ai_latency_pyramid.md 並附 file:line；check_handout.py 回報 0 ERROR。

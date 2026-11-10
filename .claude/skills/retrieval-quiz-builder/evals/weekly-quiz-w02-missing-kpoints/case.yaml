@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: weekly-quiz-w02-missing-kpoints
+expected_outcome: |
+  第 2 週尚無講義與 k_points.md。skill 應依 course-handout-builder/references/weekly-day-plan.md 的 W2 來源文章
+  現場建立暫定 K 點（標「暫定」）並寫入 00_study_plan/quizzes/week02/k_points.md，再組 20 題：本週 10、第 1 週回收 6、
+  遷移 2、客戶信 1、口說 1（3 分鐘工程師版）。解答的 file:line 全部可解析，check_quiz.py 回報 0 ERROR。

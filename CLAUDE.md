@@ -12,6 +12,16 @@ AI Fundamentals is a Chinese-language knowledge repository covering the full AI 
 - **Directory map**: `01_hardware_architecture` 硬件架构与互联(GPUDirect/PCIe/NVLink) · `02_dpu_programming` DPU/DOCA 编程 · `02_gpu_programming` GPU 编程基础(CUDA 范式、显存/跨卡访问与调优) · `02_npu_programming` 华为 NPU/CANN 编程 · `03_ai_cluster_ops` 集群运维与通信(IB 网络/NCCL/GPU 运维) · `04_cloud_native_ai_platform` 云原生 AI(K8s/GPU 池化 HAMi/调度) · `05_model_training_and_fine_tuning` 训练与微调(SFT 实践) · `06_llm_theory_and_fundamentals` LLM 理论(量化/MoE/Embedding) · `07_rag_and_tools` RAG 与工具(KG/GraphRAG/PDF 解析/分块) · `08_agentic_system` 智能体(多 Agent/记忆/MCP/上下文工程) · `09_inference_system` 推理系统(KV Cache/LMCache/vLLM) · `10_ai_related_course` 课程课件与讲稿 · `11_ai_native_everything` AI Native 工程实践(FDE 案例) · `98_llm_programming` LLM 编程(LangGraph/Spring AI/Harness) · `99_misc` 独立项目与杂项
 - **`AGENTS.md`** is a stable one-line pointer to this file — Copilot/Trae/Qoder auto-read it, so don't grow it; edit here instead.
 
+## Personal study-plan layer (`00_study_plan/`, this fork only)
+
+This fork adds a **personal 12-week study plan** on top of the upstream knowledge base, targeting foreign-company roles in AI infrastructure (TMM / AI Evangelist / PMM / TAM). Upstream content is untouched; the plan only *reads* it as teaching material.
+
+- **Entry point**: `00_study_plan/README.md` (how to start, daily routine, file index). Core context: `01_syllabus.md` (12-week schedule, readings, assignment/exam dates, grading rules), `02_assessment_spec.md` (quiz design: K 點, seven item types, daily/weekly/module recipes, Leitner spacing, confidence calibration), `03_role_competency_map.md` (role × competency × interview question × portfolio).
+- **Language**: everything under `00_study_plan/` and `.claude/skills/` is **Traditional Chinese** (the learner's language); upstream articles stay Simplified and are quoted verbatim. Do not convert either direction.
+- **Learning-science contract**: materials follow *Make It Stick* and Willingham's *Why Don't Students Like School?* — retrieval practice over rereading, spacing/interleaving, generate-before-read, confidence calibration, concrete-before-abstract, story/conflict openings. Never add multiple-choice items; never write a number without source `file:line` and 口徑 (單向/雙向, dense/sparsity, 卡規格/系統可用, vendor/measured, date).
+- **Project skills** (tracked in git, designed to be run by cheaper models — they only *restate* repo facts, never invent): `course-handout-builder` (one day's handout from the syllabus + repo articles; validates with `scripts/check_handout.py`) and `retrieval-quiz-builder` (daily/weekly/module/retake/interview quizzes from K 點 lists + error log; `scripts/build_schedule.py` computes spaced sources, `scripts/check_quiz.py` validates). Their outputs go to `00_study_plan/handouts/wNN/` and `00_study_plan/quizzes/weekNN/`; Week 1 quizzes and K 點 are hand-written exemplars of the expected format.
+- **Commit scope** for this layer: `docs(study_plan):` / `feat(skills):`. Audio recordings under `handouts/*/audio/` are gitignored.
+
 ## Commit conventions
 
 **Conventional Commits** with Chinese descriptions: `docs(scope):`, `chore(scope):`, `refactor(scope):`, `feat(scope):`.
