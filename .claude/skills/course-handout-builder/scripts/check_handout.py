@@ -24,7 +24,7 @@ REQUIRED_HEADINGS = [
 K_LINE = re.compile(r"^(W\d{2}D\d{2}-K\d+)\s*\|\s*([1-4])\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+?)\s*$")
 FILE_LINE = re.compile(r"([\w./\-一-鿿]+\.md):(\d+)(?:-(\d+))?")
 MC_PATTERN = re.compile(r"^\|[^|]*\|[^|]*\|[^|]*[（(]?\b[ABCD][)）.．]\s", re.M)
-SIMPLIFIED_SAMPLE = "内发关这为时与对机术库显带宽级缓存应该设计实现数据网络连接节点内存处理计算训练"
+SIMPLIFIED_SAMPLE = "内发关这为时与对机术库显带宽级缓应该设实现数据网络连节点处计训练"  # 只放繁簡不同形的字
 MERMAID_TYPES = ("flowchart", "sequenceDiagram", "timeline", "xychart-beta", "graph", "classDiagram", "stateDiagram")
 
 
