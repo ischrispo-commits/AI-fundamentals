@@ -1,11 +1,14 @@
-# 職缺能力地圖：四種職缺 × 能力 × 面試題型 × 作品集
+# 職缺能力地圖：五種職缺 × 能力 × 面試題型 × 作品集
 
-> 用途：讓每一份講義與作業都知道「這段知識在面試桌上會以什麼形式被問」。四種職缺共用同一套技術底層（本課程模組一～三），差在**對誰說、說到多深、產出什麼**。本文件中的職缺描述是外商 AI Infra／GPU／Data Center 領域的通則，應徵前請以目標公司實際 JD 為準。
+> 用途：讓每一份講義與作業都知道「這段知識在面試桌上會以什麼形式被問」。五種職缺共用同一套技術底層（本課程模組一～三），差在**對誰說、說到多深、產出什麼**。
+>
+> **主軸（2026-11-11 起）：Pre-sales／Solutions Engineer（伺服器・AI Infra）**。學習者背景是伺服器海外業務（韓國市場，兩年，負責報價、交期、出貨，接觸過一點資料中心），最自然的下一步是售前技術角色。其餘四種職缺保留為備選；講義與測驗的口說題、情境題優先用 Pre-sales 場景（客戶需求 → 配置 → 理由）。本文件中的職缺描述是外商 AI Infra／GPU／Data Center 領域的通則，應徵前請以目標公司實際 JD 為準。
 
-## 1. 四種職缺一句話
+## 1. 五種職缺一句話
 
 | 職缺                                   | 一句話                                                                 | 主要受眾                   | 核心產出                                                   |
 | -------------------------------------- | ---------------------------------------------------------------------- | -------------------------- | ---------------------------------------------------------- |
+| ★ Pre-sales／Solutions Engineer（SE） | 把客戶的業務需求翻成可報價的硬體配置，並說得出「為什麼這樣配」         | 客戶的工程師、IT 主管、採購；自家業務 | 需求訪談紀錄、sizing 與 BOM、方案建議書、POC 計畫、競品應對 |
 | Technical Marketing Manager（TMM）     | 把工程事實變成業務與客戶能用的技術證據                                 | 業務、SE、客戶架構師       | 參考架構、技術白皮書、競品 FAQ、benchmark 解讀、sizing 指南 |
 | AI Evangelist／Developer Advocate      | 讓開發者與社群因為你的 talk 與 demo 想用這個平台                       | 開發者、社群、媒體         | talk、demo、部落格、workshop、開源範例                      |
 | Product Marketing Manager（PMM）       | 決定產品對誰說什麼、怎麼說、憑什麼贏                                   | 市場、業務、高層、分析師   | 定位與訊息、發表計畫、競品分析、銷售賦能套件、定價輸入     |
@@ -15,21 +18,32 @@
 
 深度刻度：**1 能說名詞與定位** → **2 能講機制與數字口徑** → **3 能比較方案並給建議** → **4 能排障、算容量、做 demo**。
 
-| 技術主題（模組）                    | TMM | Evangelist | PMM | TAM | 本課程落點 |
-| ----------------------------------- | --- | ---------- | --- | --- | ---------- |
-| GPU 架構、HBM、Tensor Core 精度（M1） | 3   | 3          | 2   | 3   | W1         |
-| PCIe／NVLink／GPUDirect 資料路徑（M1） | 3   | 2          | 2   | 4   | W2         |
-| 機架級系統、延遲金字塔、競品晶片（M1） | 3   | 2          | 3   | 2   | W3         |
-| GPU 運維、可觀測性、切分（M2）        | 2   | 2          | 1   | 4   | W4         |
-| IB／Ethernet、NCCL、排程（M2）        | 3   | 2          | 3   | 3   | W5         |
-| K8s GPU 平台、AI 儲存（M2）           | 3   | 3          | 2   | 3   | W6         |
-| LLM 基礎、量化、MoE（M3）             | 2   | 3          | 2   | 2   | W8         |
-| 推理引擎、KV Cache、PD 分離（M3）     | 3   | 4          | 2   | 3   | W9         |
-| Token 經濟、TCO、容量規劃（M3）       | 3   | 2          | 4   | 3   | W10        |
-| RAG／Agent 與 infra 影響（M4）        | 2   | 4          | 2   | 2   | W11        |
-| 定位、訊息、競品地圖、MLPerf（M4）    | 3   | 2          | 4   | 1   | W12        |
+| 技術主題（模組）                    | ★Pre-sales | TMM | Evangelist | PMM | TAM | 本課程落點 |
+| ----------------------------------- | ---------- | --- | ---------- | --- | --- | ---------- |
+| GPU 架構、HBM、Tensor Core 精度（M1） | 3          | 3   | 3          | 2   | 3   | W1         |
+| PCIe／NVLink／GPUDirect 資料路徑（M1） | 4          | 3   | 2          | 2   | 4   | W2         |
+| 機架級系統、延遲金字塔、競品晶片（M1） | 3          | 3   | 2          | 3   | 2   | W3         |
+| GPU 運維、可觀測性、切分（M2）        | 2          | 2   | 2          | 1   | 4   | W4         |
+| IB／Ethernet、NCCL、排程（M2）        | 3          | 3   | 2          | 3   | 3   | W5         |
+| K8s GPU 平台、AI 儲存（M2）           | 3          | 3   | 3          | 2   | 3   | W6         |
+| LLM 基礎、量化、MoE（M3）             | 3          | 2   | 3          | 2   | 2   | W8         |
+| 推理引擎、KV Cache、PD 分離（M3）     | 3          | 3   | 4          | 2   | 3   | W9         |
+| Token 經濟、TCO、容量規劃（M3）       | 4          | 3   | 2          | 4   | 3   | W10        |
+| RAG／Agent 與 infra 影響（M4）        | 2          | 2   | 4          | 2   | 2   | W11        |
+| 定位、訊息、競品地圖、MLPerf（M4）    | 3          | 3   | 2          | 4   | 1   | W12        |
 
 ## 3. 各職缺的能力清單與本課程對應
+
+### 3.0 ★ Pre-sales／Solutions Engineer（主軸）
+
+| 能力                                  | 面試會怎麼問（英文題，答題用中文要點）                                                                                       | 作業對應           |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 需求訪談（Discovery）                 | "A customer says 'we need GPUs for AI.' What are your first five questions, and why each one?"                               | 每日 OR 題、作業 7 |
+| Sizing：模型 → 顯存 → 卡數 → 機型     | "The customer wants to serve a 70B model to 500 internal users. How many GPUs, which server, and what are your assumptions?" | 作業 7             |
+| 節點與網路配置（拓撲、NIC 配比）       | "Why does this 8-GPU server ship with eight 400G NICs? Could the customer save money with two?"                              | 作業 2、5          |
+| 競品與替代方案應對                    | "The customer got a cheaper quote with PCIe cards instead of SXM. How do you respond without bashing the competitor?"        | 作業 3、5          |
+| TCO 與商業說服                        | "Procurement only looks at unit price. How do you move the conversation to cost per token or cost per user?"                 | 作業 9             |
+| POC 規劃與交付銜接                    | "Design a two-week POC. What do you measure, and what counts as success?"                                                    | 作業 6、模擬面試   |
 
 ### 3.1 TMM
 
@@ -94,6 +108,7 @@
 
 | 目標職缺   | 作品 A（技術證據）         | 作品 B（溝通證據）                  |
 | ---------- | -------------------------- | ----------------------------------- |
+| ★Pre-sales | 作業 7 sizing one-pager（加 BOM 與假設清單） | 作業 2 資料路徑圖解，改寫成給客戶的方案說明 |
 | TMM        | 作業 6 參考架構簡報        | 作業 1 或 7 的 one-pager            |
 | Evangelist | 作業 8 talk（錄影 15 分鐘）| 作業 10 demo 腳本 + 錄影            |
 | PMM        | 作業 3 競品定位            | 作業 9 TCO 模型 + 一頁結論          |
@@ -113,3 +128,5 @@
 6. 我能處理一個 GPU 效能升級案例的第一個小時。
 7. 我能用定位五要素寫一頁競品定位。
 8. 我能把每百萬 token 成本拆成硬體、電力、利用率、Goodput 四個因子。
+9. 客戶只說「我們要做 AI」，我能用五個問題問出模型、使用者數、延遲要求、資料量與預算。
+10. 我能說明為什麼同樣 8 張 GPU，SXM（NVLink）機型和 PCIe 機型的價格與適用場景不同。

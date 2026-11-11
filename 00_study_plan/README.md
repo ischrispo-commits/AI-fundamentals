@@ -1,12 +1,12 @@
 # 00_study_plan：AI Infra GTM 速成讀書計畫（個人學習層）
 
-> 這個目錄是本 fork 新增的「個人讀書計畫層」，以上游 [AI Fundamentals](../README.md) 的文章為教材，目標是在 12 週內具備應徵外商 **TMM／AI Evangelist／PMM（AI Infra・GPU・Data Center）／TAM** 的技術深度與表達能力。學習方法依《Make It Stick》（《超牢記憶法》）與《學生為什麼不喜歡上學？》操作化：**每天提取測驗、間隔與交錯、先想再讀、信心校準、具體先於抽象、故事開場**。本層內容以繁體中文撰寫；上游文章維持簡體，引用時不改寫。
+> 這個目錄是本 fork 新增的「個人讀書計畫層」，以上游 [AI Fundamentals](../README.md) 的文章為教材，目標是在 12 週內具備應徵外商 **Pre-sales／Solutions Engineer（主軸，伺服器・AI Infra）**，以及備選的 **TMM／AI Evangelist／PMM（AI Infra・GPU・Data Center）／TAM** 的技術深度與表達能力。學習方法依《Make It Stick》（《超牢記憶法》）與《學生為什麼不喜歡上學？》操作化：**每天提取測驗、間隔與交錯、先想再讀、信心校準、具體先於抽象、故事開場**。本層內容以繁體中文撰寫；上游文章維持簡體，引用時不改寫。
 
 ## 怎麼開始（第一天 30 分鐘）
 
 1. 讀 [01_syllabus.md](01_syllabus.md) 第 1～3 節與第 7 節（規定），把 12 週日期放進行事曆。
 2. 讀 [02_assessment_spec.md](02_assessment_spec.md) 第 1、4、5 節：知道每天 6 題怎麼來、信心怎麼填。
-3. 複製 [templates/error_log.md](templates/error_log.md) 到 `quizzes/error_log.md`。
+3. 錯題本已建立在 [quizzes/error_log.md](quizzes/error_log.md)（含開課前診斷的 2 題）；進度看 [progress/log.md](progress/log.md)。
 4. 打開 [roadmap.html](roadmap.html)（瀏覽器直接開）當進度看板。
 5. 11/16（一）早上做 [quizzes/week01/d01_pretest.md](quizzes/week01/d01_pretest.md)，然後用 skill 產生第一份講義。
 
@@ -44,6 +44,9 @@
 | [02_assessment_spec.md](02_assessment_spec.md)                   | 測驗規格：體系、K 點、七種題型、組卷配方、Leitner 間隔、信心校準、解答格式、評分表   |
 | [03_role_competency_map.md](03_role_competency_map.md)           | 四職缺 × 能力 × 面試題型 × 作業對應；JD 關鍵字；作品集組合；自我定位問卷            |
 | [roadmap.html](roadmap.html)                                     | 視覺化 12 週路線圖與進度勾選（存於瀏覽器 localStorage）                             |
+| [progress/log.md](progress/log.md)                               | **跨對話共享的進度檔**：目前狀態、開課前基準線、每次檢查紀錄、給 Claude 的檢查流程（roadmap.html 的勾選 Claude 看不到，以這份為準） |
+| [quizzes/error_log.md](quizzes/error_log.md)                     | 錯題本（Leitner 盒），每日與每週檢查都會更新                                         |
+| [quizzes/baseline/](quizzes/baseline/2026-11-11_diagnostic.md)   | 開課前能力診斷（2026-11-11，16 題，7／16）                                          |
 | [quizzes/week01/](quizzes/week01/README.md)                      | 第 1 週完整題庫：前測、每日測驗 ×4、週測、解答、K 點清單                            |
 | [quizzes/interview_bank_module1.md](quizzes/interview_bank_module1.md) | 模組一模擬面試題庫（英文提問、中文要點）                                       |
 | [handouts/](handouts/README.md)                                  | 講義、作業、週反思、錄音的存放處（由 skill 產生與索引）                             |

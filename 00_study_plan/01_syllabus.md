@@ -1,6 +1,6 @@
 # AI Infra GTM 速成班：12 週從 GPU 到 Token 經濟 — 課程總綱
 
-> 本文件是這個 fork 的「個人讀書計畫」核心 context。以本 repo（AI Fundamentals，簡體中文知識庫）為主要教材，目標是在 12 週內具備應徵外商 **Technical Marketing Manager（TMM）／AI Evangelist（DevRel）／Product Marketing Manager（PMM，AI Infra・GPU・Data Center）／Technical Account Manager（TAM）** 的技術深度與表達能力。學習方法依《Make It Stick》（中譯《超牢記憶法》）與 Daniel Willingham《學生為什麼不喜歡上學？》操作化，見 [02_assessment_spec.md](02_assessment_spec.md)。
+> 本文件是這個 fork 的「個人讀書計畫」核心 context。以本 repo（AI Fundamentals，簡體中文知識庫）為主要教材，目標是在 12 週內具備應徵外商 **Pre-sales／Solutions Engineer（主軸，2026-11-11 起）**，以及備選的 **Technical Marketing Manager（TMM）／AI Evangelist（DevRel）／Product Marketing Manager（PMM，AI Infra・GPU・Data Center）／Technical Account Manager（TAM）** 的技術深度與表達能力。學習方法依《Make It Stick》（中譯《超牢記憶法》）與 Daniel Willingham《學生為什麼不喜歡上學？》操作化，見 [02_assessment_spec.md](02_assessment_spec.md)。
 
 ## 1. 基本資訊
 
@@ -9,7 +9,7 @@
 | 課程名稱     | AI Infra GTM 速成班：12 週從 GPU 到 Token 經濟                                                                                                                      |
 | 期程         | 2026-11-16（一）～ 2027-02-05（五），共 12 週；第 7 週（12/28～1/3）為跨年假期的**間隔複習週**，不排新內容                                                            |
 | 每週時數     | 12～15 小時：平日每天 2 小時（10 分鐘提取測驗 + 70 分鐘講義 + 20 分鐘費曼口說與錯題本 + 20 分鐘緩衝），週六 3～4 小時（週測 + 作業），週日 1 小時（反思 + 交作業） |
-| 目標職缺     | TMM／AI Evangelist／PMM（AI Infra, GPU, Data Center）／TAM，外商為主                                                                                                  |
+| 目標職缺     | **主軸：Pre-sales／SE**（伺服器・AI Infra）；備選：TMM／AI Evangelist／PMM／TAM，外商為主                                                                                                 |
 | 先修         | 有伺服器或 IT 基礎知識，能讀英文技術文件與規格表；不要求會寫 CUDA、不要求 K8s 實作                                                                                   |
 | 教材         | 本 repo 文章（簡中，引用時保留原文）+ 外部書目（第 4 節）+ 官方白皮書／資料表                                                                                        |
 | 語言         | 講義、測驗、作業以**繁體中文**撰寫，術語保留英文；面試題庫中英並列，口說練習以英文為主                                                                              |
@@ -141,7 +141,7 @@
 | 週測         | 每週六（W1～W6、W8～W11 共 10 次）                 | 45 分鐘 | 20 題累積交錯：本週 10 題 + 前幾週 6 題 + 遷移應用 2 題 + 150 字客戶信 1 題 + 口說 1 題          |
 | 間隔複習測驗 | 12/30、01/02                                     | 45 分鐘 | 模組一、二全範圍交錯，重點抽錯題本                                                              |
 | 模組考       | 12/05、12/26、01/23                              | 90 分鐘 | 60 分鐘筆試（30 題 + 2 題長答）+ 30 分鐘白板講解（抽一題，錄影自評）                              |
-| 模擬面試     | 12/06（TMM）、12/27（TAM）、01/24（PMM）、02/04（panel） | 45 分鐘 | 英文為主；題庫見 `quizzes/interview_bank_*.md`；錄音後對照評分表自評或請他人評                   |
+| 模擬面試     | 12/06（TMM）、12/27（TAM）、01/24（Pre-sales，原 PMM）、02/04（panel，以 Pre-sales 為主） | 45 分鐘 | 英文為主；題庫見 `quizzes/interview_bank_*.md`；錄音後對照評分表自評或請他人評                   |
 | 期末綜合考   | 02/03                                            | 120 分鐘 | 全範圍 40 題 + 3 題情境長答（各對應一種職缺）                                                  |
 | 期末作品集   | 02/02 交，02/04 答辯                              | —       | 從 10 份作業中挑 2 件修到可投遞品質，另附一頁「我如何學這門課」的學習方法說明（面試可用）         |
 
