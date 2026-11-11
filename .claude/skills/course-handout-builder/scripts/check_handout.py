@@ -15,7 +15,7 @@ REQUIRED_HEADINGS = [
     "## 2. 核心概念",
     "## 3. 數字與口徑",
     "## 4. 常見誤區",
-    "## 5. 四種職缺口徑",
+    "## 5. Pre-sales 口徑",
     "## 6. 精緻化提問",
     "## 7. 課後提取測驗",
     "## 8. 可測知識點",
@@ -155,13 +155,13 @@ def main():
         if not any("OR" in r for r in rows):
             warns.append("課後測驗沒有口說（OR）題")
 
-    # 7. 第 5 節四段
-    sec5 = re.search(r"## 5\. 四種職缺口徑.*?(?=\n## |\Z)", text, flags=re.S)
+    # 7. 第 5 節 Pre-sales 四段
+    sec5 = re.search(r"## 5\. Pre-sales 口徑.*?(?=\n## |\Z)", text, flags=re.S)
     if sec5:
         body = sec5.group(0)
-        for tag in ("CxO", "工程師", "TAM", "Demo"):
+        for tag in ("CxO", "工程師", "配置", "反對"):
             if tag not in body:
-                errors.append(f"第 5 節缺少「{tag}」口徑")
+                errors.append(f"第 5 節缺少「{tag}」段")
         cxo = re.search(r"CxO.*?(?=\n- \*\*|\Z)", body, flags=re.S)
         if cxo and re.search(r"\b(warp|SM|bank|NCCL|kernel)\b", cxo.group(0)):
             warns.append("CxO 版出現工程名詞（warp／SM／bank／NCCL／kernel）")
@@ -181,10 +181,10 @@ def main():
     # 9. 字數
     body_text = re.sub(r"```.*?```", "", text, flags=re.S)
     cjk = len(re.findall(r"[一-鿿]", body_text))
-    if cjk > 2800:
-        warns.append(f"中文字數 {cjk}，超過 70 分鐘預算（建議 ≤ 2400）")
-    if cjk < 1200:
-        warns.append(f"中文字數 {cjk}，偏少（建議 ≥ 1800）")
+    if cjk > 1800:
+        warns.append(f"中文字數 {cjk}，超過 35 分鐘預算（建議 ≤ 1500）")
+    if cjk < 900:
+        warns.append(f"中文字數 {cjk}，偏少（建議 ≥ 1100）")
 
     # 10. 簡體比例（排除圍欄與引號內）
     plain = re.sub(r"[「“\"][^」”\"]*[」”\"]", "", body_text)

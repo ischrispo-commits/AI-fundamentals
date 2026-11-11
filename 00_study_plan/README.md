@@ -10,16 +10,19 @@
 4. 打開 [roadmap.html](roadmap.html)（瀏覽器直接開）當進度看板。
 5. 11/16（一）早上做 [quizzes/week01/d01_pretest.md](quizzes/week01/d01_pretest.md)，然後用 skill 產生第一份講義。
 
-## 每日流程（平日 2 小時）
+## 每日流程（1 小時版，2026-11-11 起；細節見 [01_syllabus.md](01_syllabus.md) 第 0 節）
 
 ```text
-上午 10 分鐘   閉卷做當日測驗（quizzes/weekNN/dMM_quiz.md）→ 填信心 → 對答案 → 四格歸類 → 錯題進錯題本
-70 分鐘        讀當日講義（handouts/wNN/dMM_*.md）：先想再讀 3 題 → 情境 → 概念 → 數字口徑 → 誤區 → 四職缺口徑 → 課後提取 5 題
-20 分鐘        口說：對當日指定受眾講 60 秒，錄音存 handouts/wNN/audio/；更新錯題本重測欄
-20 分鐘        緩衝：補前一天沒做完的、或讀外部書目指定章節
-週六 3～4 小時 週測 45 分鐘 → 寫週作業（handouts/wNN/assignment.md）
-週日 1 小時    填 review.md（校準分數、三個反思問題）→ 22:00 前交作業（commit）
+平日
+  10 分鐘  閉卷做當日測驗（07:43 自動送到手機）→ 填信心 → 對答案 → 錯題進錯題本
+  35 分鐘  讀當日講義（handouts/wNN/dMM_*.md）：先想再讀 3 題 → 情境 → 概念 → 數字口徑 → 誤區 → Pre-sales 口徑 → 課後提取 5 題
+  10 分鐘  口說：對當日受眾講 60 秒（一 客戶 CxO／採購、二 客戶工程師、三 自家業務、四 客戶反對意見、五 面試官），錄音存 handouts/wNN/audio/
+   5 分鐘  緩衝
+週六 1 小時  週測 12 題（25 分鐘）→ 寫週作業 35 分鐘（只有 7 份必做，見總綱 6.1）
+週日 1 小時  完成作業 45 分鐘 → 填 review.md 15 分鐘 → 22:00 前交（21:17 自動送週檢測）
 ```
+
+時間不夠的那天，優先順序：**每日測驗 > 講義第 3、5、7 節 > 其他**。repo 原文（★）是有空再讀的延伸，不在每日 1 小時內。
 
 ## 用 skill 產生教材（給較便宜模型執行）
 
@@ -42,7 +45,7 @@
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | [01_syllabus.md](01_syllabus.md)                                 | 課程總綱：基本資訊、教學目標、邊界、指定閱讀、12 週安排、作業與考試日期、評分與規定 |
 | [02_assessment_spec.md](02_assessment_spec.md)                   | 測驗規格：體系、K 點、七種題型、組卷配方、Leitner 間隔、信心校準、解答格式、評分表   |
-| [03_role_competency_map.md](03_role_competency_map.md)           | 四職缺 × 能力 × 面試題型 × 作業對應；JD 關鍵字；作品集組合；自我定位問卷            |
+| [03_role_competency_map.md](03_role_competency_map.md)           | 五種職缺（★Pre-sales 主軸）× 能力 × 面試題型 × 作業對應；JD 關鍵字；作品集組合；自我定位問卷 |
 | [roadmap.html](roadmap.html)                                     | 視覺化 12 週路線圖與進度勾選（存於瀏覽器 localStorage）                             |
 | [progress/log.md](progress/log.md)                               | **跨對話共享的進度檔**：目前狀態、開課前基準線、每次檢查紀錄、給 Claude 的檢查流程（roadmap.html 的勾選 Claude 看不到，以這份為準） |
 | [quizzes/error_log.md](quizzes/error_log.md)                     | 錯題本（Leitner 盒），每日與每週檢查都會更新                                         |

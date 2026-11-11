@@ -75,13 +75,14 @@ def main():
         if "來源" not in text:
             errors.append("每日測驗缺「來源」欄（D-1／D-3／D-7…）")
     elif "weekly" in name:
-        expected = 20
+        # 1 小時版 12 題；第 1 週手寫範例保留原版 20 題
+        expected = 20 if "week01" in a.quiz.replace("\\", "/") else 12
         for sec in ("客戶信", "口說"):
             if sec not in text:
                 errors.append(f"週測缺「{sec}」題")
     elif "exam" in name or "retake" in name:
-        if len(rows) < 30:
-            errors.append(f"模組考／重考題數 {len(rows)}，要求 ≥ 30")
+        if len(rows) < 20:
+            errors.append(f"模組考／重考題數 {len(rows)}，要求 ≥ 20（1 小時版）")
     if expected and len(rows) != expected:
         # 週測的 CX／OR 以段落呈現，表格列數可少 2
         if not ("weekly" in name and len(rows) == expected - 2):

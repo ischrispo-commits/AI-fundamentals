@@ -5,7 +5,7 @@
 ```text
 handouts/
 └── w01/
-    ├── d01_gpu_vs_cpu.md        # 講義（含先想再讀、情境、概念、數字口徑、誤區、四職缺口徑、課後提取、K 點）
+    ├── d01_gpu_vs_cpu.md        # 講義（含先想再讀、情境、概念、數字口徑、誤區、Pre-sales 口徑、課後提取、K 點）
     ├── d02_gpu_memory_hbm.md
     ├── …
     ├── assignment.md            # 週作業（規格見 01_syllabus.md §6.1）
