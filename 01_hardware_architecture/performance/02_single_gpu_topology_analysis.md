@@ -1,29 +1,29 @@
-# 单卡 GPU 拓扑与 NUMA 分析
+# 單卡 GPU 拓撲與 NUMA 分析
 
-> 基于 Intel Xeon Platinum 8470Q (Sapphire Rapids) + RTX 5090 实际环境。本文聚焦单 GPU 场景下的拓扑分析方法，与多卡 NVLink/NVSwitch 场景形成互补。实测在 Seetacloud 容器内进行，实测时间未记录（按 RTX 5090 上市时间推断约 2025 年），驱动与内核版本未留存记录。
-
----
-
-## 1. 为什么单卡也要关注拓扑
-
-单 GPU 环境中没有 NVLink 和 P2P，但拓扑仍然直接影响性能：
-
-- **NUMA 亲和性**：GPU 通过 PCIe 连接到特定 NUMA 节点，跨 NUMA 访问系统内存会增加约 2 倍延迟
-- **PCIe 链路状态**：空闲时链路降级到 Gen 1 省电，负载下才恢复 Gen 5
-- **CPU 线程绑定**：GPU 相关的 CPU 线程应绑定到 GPU 所在 NUMA 节点，避免跨 socket 通信
+> 基於 Intel Xeon Platinum 8470Q (Sapphire Rapids) + RTX 5090 實際環境。本文聚焦單 GPU 場景下的拓撲分析方法，與多卡 NVLink/NVSwitch 場景形成互補。實測在 Seetacloud 容器內進行，實測時間未記錄（按 RTX 5090 上市時間推斷約 2025 年），驅動與核心版本未留存記錄。
 
 ---
 
-## 2. 环境信息
+## 1. 為什麼單卡也要關注拓撲
 
-### 2.1 硬件概览
+單 GPU 環境中沒有 NVLink 和 P2P，但拓撲仍然直接影響效能：
+
+- **NUMA 親和性**：GPU 透過 PCIe 連線到特定 NUMA 節點，跨 NUMA 訪問系統記憶體會增加約 2 倍延遲
+- **PCIe 鏈路狀態**：空閒時鏈路降級到 Gen 1 省電，負載下才恢復 Gen 5
+- **CPU 執行緒繫結**：GPU 相關的 CPU 執行緒應繫結到 GPU 所在 NUMA 節點，避免跨 socket 通信
+
+---
+
+## 2. 環境資訊
+
+### 2.1 硬體概覽
 
 ```bash
-# CPU 架构
+# CPU 架構
 lscpu | grep -E "Model name|Socket|NUMA|Thread|Core"
 ```
 
-本环境输出：
+本環境輸出：
 
 ```text
 Model name:     Intel(R) Xeon(R) Platinum 8470Q
@@ -34,16 +34,16 @@ CPU(s):         208
 NUMA node(s):   2
 ```
 
-### 2.2 NUMA 拓扑
+### 2.2 NUMA 拓撲
 
 ```bash
-# 各 NUMA 节点的 CPU 范围
+# 各 NUMA 節點的 CPU 範圍
 for f in /sys/devices/system/node/node*/cpulist; do
     echo "$f: $(cat $f)"
 done
 ```
 
-本环境输出：
+本環境輸出：
 
 ```text
 /sys/devices/system/node/node0/cpulist: 0-51,104-155
@@ -51,13 +51,13 @@ done
 ```
 
 ```bash
-# NUMA 距离矩阵
+# NUMA 距離矩陣
 for f in /sys/devices/system/node/node*/distance; do
     echo "$f:"; cat $f
 done
 ```
 
-本环境输出：
+本環境輸出：
 
 ```text
 /sys/devices/system/node/node0/distance:
@@ -66,72 +66,72 @@ done
 21 10
 ```
 
-**解读**：本地 NUMA 访问代价 = 10，跨 NUMA 访问代价 = 21。约 2.1 倍延迟惩罚。
+**解讀**：本地 NUMA 訪問代價 = 10，跨 NUMA 訪問代價 = 21。約 2.1 倍延遲懲罰。
 
-### 2.3 GPU PCIe 拓扑
+### 2.3 GPU PCIe 拓撲
 
 ```bash
-# GPU 的 NUMA 亲和性
+# GPU 的 NUMA 親和性
 cat /sys/bus/pci/devices/0000:98:00.0/numa_node
-# 输出: 1
+# 輸出: 1
 
-# GPU PCIe 链路最大能力
+# GPU PCIe 鏈路最大能力
 cat /sys/bus/pci/devices/0000:98:00.0/max_link_speed   # 32.0 GT/s PCIe (Gen 5)
 cat /sys/bus/pci/devices/0000:98:00.0/max_link_width    # 16
 
-# GPU 在 PCIe 树中的路径
+# GPU 在 PCIe 樹中的路徑
 readlink -f /sys/bus/pci/devices/0000:98:00.0
-# 输出: /sys/devices/pci0000:97/0000:97:01.0/0000:98:00.0
+# 輸出: /sys/devices/pci0000:97/0000:97:01.0/0000:98:00.0
 ```
 
 ---
 
-## 3. nvidia-smi 拓扑视图解读
+## 3. nvidia-smi 拓撲檢視解讀
 
-### 3.1 基本拓扑 (`topo -m`)
+### 3.1 基本拓撲 (`topo -m`)
 
 ```bash
 nvidia-smi topo -m
 ```
 
-本环境输出（单 RTX 5090）：
+本環境輸出（單 RTX 5090）：
 
 ```text
         GPU0    CPU Affinity    NUMA Affinity   GPU NUMA ID
 GPU0     X      52-103,156-207  1               N/A
 ```
 
-图例：
+圖例：
 
-| 缩写 | 含义                                       | 延迟 |
+| 縮寫 | 含義                                       | 延遲 |
 | ---- | ------------------------------------------ | ---- |
 | X    | Self                                       | —    |
-| PIX  | 单 PCIe bridge 内                          | 极低 |
+| PIX  | 單 PCIe bridge 內                          | 極低 |
 | PXB  | 多 PCIe bridge，不出 PCIe Host Bridge      | 低   |
-| PHB  | 跨 PCIe Host Bridge（经 CPU Root Complex） | 中   |
-| NODE | 同 NUMA 节点内跨 PCIe Host Bridge          | 高   |
-| SYS  | 跨 CPU Socket（经 UPI/IF）                 | 高   |
-| NV#  | 经 NVLink                                  | 极低 |
+| PHB  | 跨 PCIe Host Bridge（經 CPU Root Complex） | 中   |
+| NODE | 同 NUMA 節點內跨 PCIe Host Bridge          | 高   |
+| SYS  | 跨 CPU Socket（經 UPI/IF）                 | 高   |
+| NV#  | 經 NVLink                                  | 極低 |
 
-多卡场景下，同一 NUMA 节点的 GPU 之间通常显示为 `NODE` 或 `PIX`，跨 NUMA 则为 `SYS`。注意 `PIX`/`PXB`/`PHB` 本身是桥接层级分类，与 NUMA 无关：两张卡即使在同一 NUMA 节点，只要路径跨了 host bridge 也显示 `PHB`；只有 `NODE`/`SYS` 才编码 NUMA/socket 信息。
+多卡場景下，同一 NUMA 節點的 GPU 之間通常顯示為 `NODE` 或 `PIX`，跨 NUMA 則為 `SYS`。注意 `PIX`/`PXB`/`PHB` 本身是橋接層級分類，與 NUMA 無關：兩張卡即使在同一 NUMA 節點，只要路徑跨了 host bridge 也顯示 `PHB`；只有 `NODE`/`SYS` 才編碼 NUMA/socket 信息。
 
-### 3.2 矩阵拓扑 (`topo -mp`)
+### 3.2 矩陣拓撲 (`topo -mp`)
 
-`-mp` 选项以更紧凑的矩阵格式展示，适合多 GPU 场景：
+`-mp` 選項以更緊湊的矩陣格式展示，適合多 GPU 場景：
 
 ```bash
 nvidia-smi topo -mp
 ```
 
-### 3.3 P2P 状态 (`topo -p2p`)
+### 3.3 P2P 狀態 (`topo -p2p`)
 
 ```bash
-nvidia-smi topo -p2p r    # r = 可访问性
-nvidia-smi topo -p2p w    # w = 带宽矩阵
-nvidia-smi topo -p2p n    # n = 路径类型 (PIX/NODE/SYS等)
+nvidia-smi topo -p2p r    # r = 可訪問性
+nvidia-smi topo -p2p w    # w = 頻寬矩陣
+nvidia-smi topo -p2p n    # n = 路徑類型 (PIX/NODE/SYS等)
 ```
 
-本环境输出（单卡，仅 Self）：
+本環境輸出（單卡，僅 Self）：
 
 ```text
         GPU0
@@ -140,41 +140,41 @@ nvidia-smi topo -p2p n    # n = 路径类型 (PIX/NODE/SYS等)
 
 ---
 
-## 4. 跨 NUMA 访问的实测影响
+## 4. 跨 NUMA 訪問的實測影響
 
 ### 4.1 方法
 
-以下脚本分别在 GPU 所在 NUMA (node 1) 和远端 NUMA (node 0) 分配内存，测量 H2D 带宽差异。
+以下指令碼分別在 GPU 所在 NUMA (node 1) 和遠端 NUMA (node 0) 分配記憶體，測量 H2D 頻寬差異。
 
 ```bash
-# 如果 numactl 未安装
+# 如果 numactl 未安裝
 apt install numactl
 
-# 绑定到 GPU 所在 NUMA
+# 繫結到 GPU 所在 NUMA
 numactl --cpunodebind=1 --membind=1 ./pcie_bw_test
 
-# 绑定到远端 NUMA
+# 繫結到遠端 NUMA
 numactl --cpunodebind=0 --membind=0 ./pcie_bw_test
 ```
 
-**本环境实测（taskset 绑核）**：
+**本環境實測（taskset 綁核）**：
 
-| CPU 绑定           | H2D 1 GB (GB/s) | D2H 1 GB (GB/s) |
+| CPU 繫結           | H2D 1 GB (GB/s) | D2H 1 GB (GB/s) |
 | ------------------ | --------------- | --------------- |
 | Node 0 (跨 NUMA)   | 52.60           | 53.33           |
 | Node 1 (本地 NUMA) | 52.63           | 53.05           |
 
-> 实测两个 NUMA 节点带宽几乎一致。这是因为 Seetacloud 容器环境中 `membind` 策略被限制（`set_mempolicy: Operation not permitted`），实际内存分配策略为 `default`（不受 CPU binding 影响）。容器/VM 环境常掩盖 NUMA 效应——裸金属环境预计可观测到 ~2.1× 差异。
+> 實測兩個 NUMA 節點頻寬幾乎一致。這是因為 Seetacloud 容器環境中 `membind` 策略被限制（`set_mempolicy: Operation not permitted`），實際記憶體分配策略為 `default`（不受 CPU binding 影響）。容器/VM 環境常掩蓋 NUMA 效應——裸金屬環境預計可觀測到 ~2.1× 差異。
 
-### 4.2 建议
+### 4.2 建議
 
-- GPU 程序应尽量从 GPU 所在 NUMA 节点分配 pinned memory
-- 使用 `cudaMallocHost` (pinned memory) 时，系统自动从当前线程所在 NUMA 分配
-- 可以用 `taskset -c 52-103` 或 `numactl --cpunodebind=1` 绑定进程到 GPU NUMA
+- GPU 程式應儘量從 GPU 所在 NUMA 節點分配 pinned memory
+- 使用 `cudaMallocHost` (pinned memory) 時，系統自動從當前執行緒所在 NUMA 分配
+- 可以用 `taskset -c 52-103` 或 `numactl --cpunodebind=1` 繫結行程到 GPU NUMA
 
 ---
 
-## 5. CUDA 侧查询拓扑信息
+## 5. CUDA 側查詢拓撲資訊
 
 ```c
 cudaDeviceProp prop;
@@ -184,7 +184,7 @@ printf("PCI Bus:     %02x\n", prop.pciBusID);
 printf("PCI Device:  %02x\n", prop.pciDeviceID);
 ```
 
-也可以通过 `cudaDeviceGetByPCIBusId` 反向查询，确保选中正确的 GPU：
+也可以透過 `cudaDeviceGetByPCIBusId` 反向查詢，確保選中正確的 GPU：
 
 ```c
 cudaDeviceGetByPCIBusId(&device_id, "0000:98:00.0");
@@ -193,23 +193,23 @@ cudaSetDevice(device_id);
 
 ---
 
-## 6. 与多卡场景的对比
+## 6. 與多卡場景的對比
 
-| 维度        | 单卡 RTX 5090                   | 多卡 A100/H100 集群           |
+| 維度        | 單卡 RTX 5090                   | 多卡 A100/H100 叢集           |
 | ----------- | ------------------------------- | ----------------------------- |
-| GPU 互连    | 无                              | NVLink / NVSwitch             |
+| GPU 互連    | 無                              | NVLink / NVSwitch             |
 | P2P         | 不支持                          | 支持 (GPUDirect P2P)          |
-| NUMA 意识   | 关键（选错节点损失大）          | 重要但被 NVLink 部分掩盖      |
-| 拓扑命令    | `topo -m` 即可                  | `topo -mp` + `topo -p2p` 全套 |
-| NVLink 查询 | `nvidia-smi nvlink -s` → 不支持 | 完整的链路状态和计数          |
+| NUMA 意識   | 關鍵（選錯節點損失大）          | 重要但被 NVLink 部分掩蓋      |
+| 拓撲命令    | `topo -m` 即可                  | `topo -mp` + `topo -p2p` 全套 |
+| NVLink 查詢 | `nvidia-smi nvlink -s` → 不支持 | 完整的鏈路狀態和計數          |
 
 ---
 
-## 参考
+## 參考
 
-- [PCIe 技术大全](../pcie/01_pcie_comprehensive_guide.md)
-- [NVLink 技术入门](../nvlink/nvlink_intro.md)
-- [nvidia-smi 快速入门](../../03_ai_cluster_ops/01_gpu_ops/03_nvidia_smi_guide.md)
-- [CUDA Device Attribute 官方文档](https://docs.nvidia.com/cuda/cuda-runtime-api/structcudaDeviceProp.html)
-- [PCIe 带宽实测](../../02_gpu_programming/04_profiling/02_pcie_bandwidth_measurement.md) — H2D/D2H 基准程序
-- [PCIe 带宽 Benchmark](../../02_gpu_programming/04_profiling/code/02_pcie_bandwidth_bench.cu) — 可编译运行的配套代码
+- [PCIe 技術大全](../pcie/01_pcie_comprehensive_guide.md)
+- [NVLink 技術入門](../nvlink/nvlink_intro.md)
+- [nvidia-smi 快速入門](../../03_ai_cluster_ops/01_gpu_ops/03_nvidia_smi_guide.md)
+- [CUDA Device Attribute 官方文件](https://docs.nvidia.com/cuda/cuda-runtime-api/structcudaDeviceProp.html)
+- [PCIe 頻寬實測](../../02_gpu_programming/04_profiling/02_pcie_bandwidth_measurement.md) — H2D/D2H 基准程序
+- [PCIe 頻寬 Benchmark](../../02_gpu_programming/04_profiling/code/02_pcie_bandwidth_bench.cu) — 可編譯執行的配套程式碼

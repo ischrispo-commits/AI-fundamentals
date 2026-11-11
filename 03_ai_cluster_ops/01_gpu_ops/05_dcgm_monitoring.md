@@ -1,40 +1,40 @@
-# DCGM 监控实操
+# DCGM 監控實操
 
-> 基于 A100-SXM4-80GB (8 GPU) + DCGM v3.3.9 实测（数据采集于 2026-11 之前）。DCGM (Data Center GPU Manager) 是 NVIDIA 官方推荐的 GPU 集群监控方案，它提供了 `nvidia-smi` 不具备的能力：SM Active 等 profiling 指标、显存带宽利用率、长时间趋势采集、以及与 Prometheus/Grafana 的原生集成。本文覆盖 `dcgmi` 命令行的诊断、监控、健康检查三大功能。
+> 基於 A100-SXM4-80GB (8 GPU) + DCGM v3.3.9 實測（資料採集於 2026-11 之前）。DCGM (Data Center GPU Manager) 是 NVIDIA 官方推薦的 GPU 叢集監控方案，它提供了 `nvidia-smi` 不具備的能力：SM Active 等 profiling 指標、顯存頻寬利用率、長時間趨勢採集、以及與 Prometheus/Grafana 的原生集成。本文覆蓋 `dcgmi` 命令列的診斷、監控、健康檢查三大功能。
 
 ---
 
-## 1. DCGM 与 nvidia-smi 的区别
+## 1. DCGM 與 nvidia-smi 的區別
 
-`nvidia-smi` 的 `GPU-Util` 只告诉你"某段时间有 kernel 在跑"——1 个线程在跑也是 100%，全部 SM 满载也是 100%，无法区分。DCGM 在 `nvidia-smi` 的指标之上，补充了**真正反映硬件利用率的指标**：
+`nvidia-smi` 的 `GPU-Util` 只告訴你"某段時間有 kernel 在跑"——1 個執行緒在跑也是 100%，全部 SM 滿載也是 100%，無法區分。DCGM 在 `nvidia-smi` 的指標之上，補充了**真正反映硬體利用率的指標**：
 
-| 指标            | nvidia-smi          | DCGM                             | 说明                                   |
+| 指標            | nvidia-smi          | DCGM                             | 說明                                   |
 | --------------- | ------------------- | -------------------------------- | -------------------------------------- |
-| GPU 利用率      | GPU-Util (误导性)   | **SM Active** / **SM Occupancy** | DCGM 区分"有 kernel 在跑"和"SM 被用满" |
-| 显存带宽利用率  | ❌ 无               | **DRAM Active** / **PCIe TX/RX** | 判断是否是 memory bound                |
-| 功耗            | `power.draw`        | **Power Usage**                  | 两者都有，DCGM 可做趋势                |
-| NVLink 状态     | `nvidia-smi nvlink` | **NVLink 链路 Up/Down**          | DCGM 输出更紧凑，适合脚本解析          |
-| 历史数据        | ❌ 无               | DCGM 只负责输出指标，时间序列存储在 Prometheus 侧 | 回溯分析的关键       |
-| Prometheus 集成 | ❌ 无               | ✅ 原生 exporter                 | 集群级监控的基础                       |
+| GPU 利用率      | GPU-Util (誤導性)   | **SM Active** / **SM Occupancy** | DCGM 區分"有 kernel 在跑"和"SM 被用滿" |
+| 顯存頻寬利用率  | ❌ 無               | **DRAM Active** / **PCIe TX/RX** | 判斷是否是 memory bound                |
+| 功耗            | `power.draw`        | **Power Usage**                  | 兩者都有，DCGM 可做趨勢                |
+| NVLink 狀態     | `nvidia-smi nvlink` | **NVLink 鏈路 Up/Down**          | DCGM 輸出更緊湊，適合指令碼解析          |
+| 歷史資料        | ❌ 無               | DCGM 只負責輸出指標，時間序列儲存在 Prometheus 側 | 回溯分析的關鍵       |
+| Prometheus 集成 | ❌ 無               | ✅ 原生 exporter                 | 叢集級監控的基礎                       |
 
-> 前置阅读：[GPU 利用率是一个误导性指标](02_gpu_utilization_myth.md)
+> 前置閱讀：[GPU 利用率是一個誤導性指標](02_gpu_utilization_myth.md)
 
 ---
 
-## 2. 安装与基础发现
+## 2. 安裝與基礎發現
 
-### 2.1 安装
+### 2.1 安裝
 
 ```bash
 # Ubuntu/Debian
 apt-get install datacenter-gpu-manager
 
-# 验证
+# 驗證
 dcgmi --version
 # dcgmi  version: 3.3.9
 ```
 
-### 2.2 GPU 发现
+### 2.2 GPU 發現
 
 ```bash
 dcgmi discovery -l
@@ -52,57 +52,57 @@ dcgmi discovery -l
 0 NvSwitches found.
 ```
 
-> 注意：`dcgmi discovery` 显示 0 NvSwitch——这并不意味着 NVSwitch 不存在，而是 DCGM v3.3.9 的 NVSwitch 发现依赖特定驱动接口。NVSwitch 的实际状态通过 NVLink 链路状态间接反映。
+> 注意：`dcgmi discovery` 顯示 0 NvSwitch——這並不意味著 NVSwitch 不存在，而是 DCGM v3.3.9 的 NVSwitch 發現依賴特定驅動介面。NVSwitch 的實際狀態透過 NVLink 鏈路狀態間接反映。
 
-### 2.3 创建 GPU 组
+### 2.3 建立 GPU 組
 
-DCGM 操作基于"组"（Group）模型。先创建组，再将 GPU 加入：
+DCGM 操作基於"組"（Group）模型。先建立組，再將 GPU 加入：
 
 ```bash
-# 创建包含所有支持 GPU 的组
+# 建立包含所有支援 GPU 的組
 dcgmi group -c allgpus --default
 
-# 查看所有组
+# 檢視所有組
 dcgmi group -l
 ```
 
 ```text
 3 groups found.
-  0: DCGM_ALL_SUPPORTED_GPUS       → GPU 0-7 (系统默认)
-  1: DCGM_ALL_SUPPORTED_NVSWITCHES → None (无 NVSwitch 被检测)
-  2: allgpus                       → GPU 0-7 (用户创建)
+  0: DCGM_ALL_SUPPORTED_GPUS       → GPU 0-7 (系統預設)
+  1: DCGM_ALL_SUPPORTED_NVSWITCHES → None (無 NVSwitch 被檢測)
+  2: allgpus                       → GPU 0-7 (使用者建立)
 ```
 
 ---
 
-## 3. 实时监控：`dcgmi dmon`
+## 3. 實時監控：`dcgmi dmon`
 
-`dcgmi dmon` 是 DCGM 的实时监控命令——以固定间隔采样 GPU 指标。
+`dcgmi dmon` 是 DCGM 的實時監控命令——以固定間隔取樣 GPU 指標。
 
-### 3.1 关键 Field ID 速查
+### 3.1 關鍵 Field ID 速查
 
-下表按 DCGM v3.3.9 的 `dcgm_fields.h` 核对。注意：203 是 `DCGM_FI_DEV_GPU_UTIL`，与 nvidia-smi 的 GPU-Util 同口径（采样周期内有 kernel 执行的时间占比）；真正反映 SM 活跃度的是 profiling 指标 1002。
+下表按 DCGM v3.3.9 的 `dcgm_fields.h` 核對。注意：203 是 `DCGM_FI_DEV_GPU_UTIL`，與 nvidia-smi 的 GPU-Util 同口徑（取樣週期內有 kernel 執行的時間佔比）；真正反映 SM 活躍度的是 profiling 指標 1002。
 
-| Field ID | 短名  | 含义                                                                        | 什么时候用                                 |
+| Field ID | 短名  | 含義                                                                        | 什麼時候用                                 |
 | -------- | ----- | --------------------------------------------------------------------------- | ------------------------------------------ |
-| **203**  | GPUTL | `DCGM_FI_DEV_GPU_UTIL`：有 kernel 执行的时间占比，即被 [GPU 忙不忙怎么判断](09_gpu_busy_check.md) 批评的 GPU-Util 口径 | 与 nvidia-smi GPU-Util 对齐                |
-| **204**  | MCUTL | `DCGM_FI_DEV_MEM_COPY_UTIL`：显存拷贝/带宽利用率                            | > 80% 且 SMACT 低 → memory bound           |
-| **1001** | GRACT | `DCGM_FI_PROF_GR_ENGINE_ACTIVE`：图形引擎活跃周期占比（比例）               | kernel 执行占比的比例形式                  |
-| **1002** | SMACT | `DCGM_FI_PROF_SM_ACTIVE`：SM 上至少一个 warp 活跃的周期占比                 | 判断 SM 真实活跃度，替代 GPU-Util          |
-| **1003** | SMOCC | `DCGM_FI_PROF_SM_OCCUPANCY`：SM 占用率（活跃 warp 驻留比例）                | 区分"SM 活跃"与"SM 驻留深度"               |
-| **1005** | DRAMA | `DCGM_FI_PROF_DRAM_ACTIVE`：DRAM 活跃周期占比                               | 显存带宽瓶颈定位                           |
-| **1010** | PCIRX | `DCGM_FI_PROF_PCIE_RX_BYTES`：PCIe 接收吞吐                                 | 跨机通信数据量                             |
-| **150**  | TMPTR | GPU 温度 (°C)                                                               | 散热健康                                   |
-| **155**  | PWR   | GPU 功耗 (W)                                                                | 能效评估                                   |
+| **203**  | GPUTL | `DCGM_FI_DEV_GPU_UTIL`：有 kernel 執行的時間佔比，即被 [GPU 忙不忙怎麼判斷](09_gpu_busy_check.md) 批評的 GPU-Util 口徑 | 與 nvidia-smi GPU-Util 對齊                |
+| **204**  | MCUTL | `DCGM_FI_DEV_MEM_COPY_UTIL`：顯存複製/頻寬利用率                            | > 80% 且 SMACT 低 → memory bound           |
+| **1001** | GRACT | `DCGM_FI_PROF_GR_ENGINE_ACTIVE`：圖形引擎活躍週期佔比（比例）               | kernel 執行佔比的比例形式                  |
+| **1002** | SMACT | `DCGM_FI_PROF_SM_ACTIVE`：SM 上至少一個 warp 活躍的週期佔比                 | 判斷 SM 真實活躍度，替代 GPU-Util          |
+| **1003** | SMOCC | `DCGM_FI_PROF_SM_OCCUPANCY`：SM 占用率（活躍 warp 駐留比例）                | 區分"SM 活躍"與"SM 駐留深度"               |
+| **1005** | DRAMA | `DCGM_FI_PROF_DRAM_ACTIVE`：DRAM 活躍週期佔比                               | 顯存頻寬瓶頸定位                           |
+| **1010** | PCIRX | `DCGM_FI_PROF_PCIE_RX_BYTES`：PCIe 接收吞吐                                 | 跨機通訊資料量                             |
+| **150**  | TMPTR | GPU 溫度 (°C)                                                               | 散熱健康                                   |
+| **155**  | PWR   | GPU 功耗 (W)                                                                | 能效評估                                   |
 
-### 3.2 基础监控示例
+### 3.2 基礎監控示例
 
 ```bash
-# 每 3 秒采样，共 5 次。监控 GPU 利用率、显存利用率、SM Active、温度
+# 每 3 秒取樣，共 5 次。監控 GPU 利用率、顯存利用率、SM Active、溫度
 dcgmi dmon -e 203,204,1001,1002,150 -d 3000 -c 5
 ```
 
-当前节点输出（8 GPU 全部空闲；列头短名为示意口径，按 §3.1 字段表对应，实机输出未逐列复核）：
+當前節點輸出（8 GPU 全部空閒；列頭短名為示意口徑，按 §3.1 欄位表對應，實機輸出未逐列複核）：
 
 ```text
 #Entity   GPUTL      MCUTL      GRACT       SMACT       TMPTR
@@ -117,28 +117,28 @@ GPU 1     0          0          0.000       0.000       27
 GPU 0     0          0          0.000       0.000       28
 ```
 
-**解读**：
+**解讀**：
 
-- GPU 7 `GPUTL` 和 `MCUTL` 显示 `N/A`，其他 GPU 显示 `0`：前者是 MIG Enabled 导致的监控异常（参见 [MIG 配置与实操](../../01_hardware_architecture/nvidia/mig_hands_on.md)），后者是真实空闲
-- 所有 GPU 的 GRACT 和 SMACT 为零，无负载
-- 温度 25-29°C，健康空闲温度范围
+- GPU 7 `GPUTL` 和 `MCUTL` 顯示 `N/A`，其他 GPU 顯示 `0`：前者是 MIG Enabled 導致的監控異常（參見 [MIG 配置與實操](../../01_hardware_architecture/nvidia/mig_hands_on.md)），後者是真實空閒
+- 所有 GPU 的 GRACT 和 SMACT 為零，無負載
+- 溫度 25-29°C，健康空閒溫度範圍
 
-> **对比 nvidia-smi**：同样的空闲状态，`nvidia-smi` 的 GPU-Util 也会显示 0%。但关键区别发生在**有负载时**——nvidia-smi 的 GPU-Util 50% 可能意味着 SM Active 只有 20% 或 80%，DCGM 能精确区分。
+> **對比 nvidia-smi**：同樣的空閒狀態，`nvidia-smi` 的 GPU-Util 也會顯示 0%。但關鍵區別發生在**有負載時**——nvidia-smi 的 GPU-Util 50% 可能意味着 SM Active 只有 20% 或 80%，DCGM 能精確區分。
 >
-> **采样注意**：`dcgmi dmon` 的采样周期（`-d`）是毫秒级。如果 Kernel 执行时间 < 采样周期，SM Active 可能被低估——高频率的短 Kernel（如小型推理请求）建议用更短的采样间隔（`-d 100` = 100ms），或通过 `-c` 增加采样次数取平均。
+> **取樣注意**：`dcgmi dmon` 的取樣週期（`-d`）是毫秒級。如果 Kernel 執行時間 < 取樣週期，SM Active 可能被低估——高頻率的短 Kernel（如小型推理請求）建議用更短的取樣間隔（`-d 100` = 100ms），或透過 `-c` 增加取樣次數取平均。
 
 ---
 
-## 4. NVLink 监控：`dcgmi nvlink`
+## 4. NVLink 監控：`dcgmi nvlink`
 
-DCGM 的 NVLink 输出比 `nvidia-smi nvlink --status` 更紧凑，适合脚本化采集：
+DCGM 的 NVLink 輸出比 `nvidia-smi nvlink --status` 更緊湊，適合指令碼化採集：
 
 ```bash
 dcgmi nvlink -s
 ```
 
 ```text
-gpuId 0: U U U U U U U U U U U U _ _ _ _ _ _   ← 12 条 NVLink 全 Up
+gpuId 0: U U U U U U U U U U U U _ _ _ _ _ _   ← 12 條 NVLink 全 Up
 gpuId 1: U U U U U U U U U U U U _ _ _ _ _ _
 gpuId 2: U U U U U U U U U U U U _ _ _ _ _ _
 gpuId 3: U U U U U U U U U U U U _ _ _ _ _ _
@@ -150,68 +150,68 @@ gpuId 7: _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _   ← 全部 Not Supported
 Key: Up=U, Down=D, Disabled=X, Not Supported=_
 ```
 
-**一眼定位故障**：GPU 7 的 18 个 link 位置全部为 `_`（Not Supported）——与 `nvidia-smi topo -m` 中 GPU 7 的 SYS/NODE/PXB 连接相互印证。GPU 0-6 的 12 条 link 全部为 `U`（Up），NVLink 健康。
+**一眼定位故障**：GPU 7 的 18 個 link 位置全部為 `_`（Not Supported）——與 `nvidia-smi topo -m` 中 GPU 7 的 SYS/NODE/PXB 連線相互印證。GPU 0-6 的 12 條 link 全部為 `U`（Up），NVLink 健康。
 
 ---
 
-## 5. 诊断测试：`dcgmi diag`
+## 5. 診斷測試：`dcgmi diag`
 
-DCGM 内置三级诊断（Level 1-3），从快速冒烟测试到深度压力测试：
+DCGM 內建三級診斷（Level 1-3），從快速冒煙測試到深度壓力測試：
 
 ```bash
-dcgmi diag -r 1 -i 3   # Level 1: 快速诊断 (GPU 3)
-dcgmi diag -r 2 -i 3   # Level 2: 中等压力
-dcgmi diag -r 3 -i 3   # Level 3: 全力压力测试
+dcgmi diag -r 1 -i 3   # Level 1: 快速診斷 (GPU 3)
+dcgmi diag -r 2 -i 3   # Level 2: 中等壓力
+dcgmi diag -r 3 -i 3   # Level 3: 全力壓力測試
 ```
 
-**本环境限制**：当集群中同时存在 MIG Enabled (GPU 7) 和 MIG Disabled (GPU 0-6) 的 GPU 时，`dcgmi diag` 会报错：
+**本環境限制**：當叢集中同時存在 MIG Enabled (GPU 7) 和 MIG Disabled (GPU 0-6) 的 GPU 時，`dcgmi diag` 會報錯：
 
 ```text
 Cannot run diagnostic: CUDA does not support enumerating GPUs when one or
 more GPUs has MIG mode enabled and one or more GPUs has MIG mode disabled.
 ```
 
-**解决**：在运行 `dcgmi diag` 前，确保所有 GPU 的 MIG 模式一致（全部 Disabled 或全部 Enabled + 创建 GI/CI）。
+**解決**：在執行 `dcgmi diag` 前，確保所有 GPU 的 MIG 模式一致（全部 Disabled 或全部 Enabled + 建立 GI/CI）。
 
 ---
 
 ## 6. Prometheus + Grafana 集成
 
-DCGM 的 `dcgm-exporter` 将 GPU 指标暴露为 Prometheus 格式，配合 Grafana 实现集群级长期监控。CLI 工具只能看当前时刻的采样值，指标写入 Prometheus 之后才能做跨天的趋势回溯。
+DCGM 的 `dcgm-exporter` 將 GPU 指標暴露為 Prometheus 格式，配合 Grafana 實現叢集級長期監控。CLI 工具只能看當前時刻的取樣值，指標寫入 Prometheus 之後才能做跨天的趨勢回溯。
 
 ```bash
-# 启动 DCGM Exporter（主渠道为 NGC 的 nvcr.io/nvidia/k8s/dcgm-exporter；
-# tag 规则：<exporter 版本>-<DCGM 版本>-<OS>，应选用与节点 DCGM 版本配套的 tag，勿用 latest）
+# 啟動 DCGM Exporter（主渠道為 NGC 的 nvcr.io/nvidia/k8s/dcgm-exporter；
+# tag 規則：<exporter 版本>-<DCGM 版本>-<OS>，應選用與節點 DCGM 版本配套的 tag，勿用 latest）
 docker run -d --gpus all --name dcgm-exporter -p 9400:9400 \
   nvcr.io/nvidia/k8s/dcgm-exporter:3.3.9-3.6.1-ubuntu22.04
 
-# 验证指标端点
+# 驗證指標端點
 curl http://localhost:9400/metrics | grep -E "DCGM_FI_(DEV_SM_CLOCK|PROF_DRAM_ACTIVE|DEV_POWER_USAGE)"
 ```
 
-Grafana Dashboard 推荐：**NVIDIA DCGM Exporter Dashboard**（ID: 12239），关键面板：SM Active、DRAM Active、NVLink 吞吐、温度、功耗。
+Grafana Dashboard 推薦：**NVIDIA DCGM Exporter Dashboard**（ID: 12239），關鍵面板：SM Active、DRAM Active、NVLink 吞吐、溫度、功耗。
 
-> 本文聚焦 CLI 诊断。DCGM Exporter 的完整部署（systemd 服务、K8s DaemonSet、Prometheus Operator 集成）留给 Prometheus 运维专题。
+> 本文聚焦 CLI 診斷。DCGM Exporter 的完整部署（systemd 服務、K8s DaemonSet、Prometheus Operator 集成）留給 Prometheus 運維專題。
 
 ---
 
-## 7. 监控脚本示例
+## 7. 監控指令碼示例
 
-将 DCGM 监控嵌入日常运维：
+將 DCGM 監控嵌入日常運維：
 
 ```bash
 #!/bin/bash
-# quick_gpu_check.sh — 快速 GPU 集群健康检查
+# quick_gpu_check.sh — 快速 GPU 叢集健康檢查
 
-echo "=== GPU 概览 ==="
+echo "=== GPU 概覽 ==="
 dcgmi discovery -l | grep -E "GPU ID|Name"
 
 echo ""
-echo "=== NVLink 链路状态 ==="
+echo "=== NVLink 鏈路狀態 ==="
 dcgmi nvlink -s | grep -c "U U U U U U U U U U U U" | awk '{print $1 " / 8 GPUs have 12 NVLink Up"}'
 
 echo ""
-echo "=== 当前温度 ==="
+echo "=== 當前溫度 ==="
 dcgmi dmon -e 150 -d 1000 -c 1 2>/dev/null | tail -9 | awk '{printf "GPU %s: %s°C\n", $1, $2}'
 
 echo ""
@@ -221,17 +221,17 @@ dcgmi dmon -e 1002 -d 3000 -c 1 2>/dev/null
 
 ---
 
-## 8. 相关文档
+## 8. 相關文件
 
-- [`02_gpu_utilization_myth.md`](02_gpu_utilization_myth.md)：解释了为什么 DCGM 的 SM Active 才是正确指标
-- [`03_nvidia_smi_guide.md`](03_nvidia_smi_guide.md)：nvidia-smi 基本操作，DCGM 是其升级版
-- [NVLink 诊断与实操](../../01_hardware_architecture/nvlink/nvlink_diagnostics.md)：nvidia-smi nvlink vs dcgmi nvlink 双工具对比
-- [MIG 配置与实操](../../01_hardware_architecture/nvidia/mig_hands_on.md)：MIG Enabled GPU 对 DCGM 监控的影响
+- [`02_gpu_utilization_myth.md`](02_gpu_utilization_myth.md)：解釋了為什麼 DCGM 的 SM Active 才是正確指標
+- [`03_nvidia_smi_guide.md`](03_nvidia_smi_guide.md)：nvidia-smi 基本操作，DCGM 是其升級版
+- [NVLink 診斷與實操](../../01_hardware_architecture/nvlink/nvlink_diagnostics.md)：nvidia-smi nvlink vs dcgmi nvlink 雙工具對比
+- [MIG 配置與實操](../../01_hardware_architecture/nvidia/mig_hands_on.md)：MIG Enabled GPU 對 DCGM 監控的影響
 
 ---
 
-## 参考文档
+## 參考文件
 
-- [NVIDIA DCGM 官方文档](https://docs.nvidia.com/datacenter/dcgm/latest/)
+- [NVIDIA DCGM 官方文件](https://docs.nvidia.com/datacenter/dcgm/latest/)
 - [DCGM Exporter for Prometheus](https://github.com/NVIDIA/dcgm-exporter)
 - [NVIDIA DCGM Grafana Dashboards](https://grafana.com/grafana/dashboards/12239)

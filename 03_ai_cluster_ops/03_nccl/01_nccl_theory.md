@@ -1,291 +1,291 @@
-# NCCL 技术理论深度解析
+# NCCL 技術理論深度解析
 
-> 覆盖 AllReduce 算法原理、RDMA 通信机制、性能建模、内存管理、容错与监控等理论主题。
+> 覆蓋 AllReduce 算法原理、RDMA 通訊機制、性能建模、記憶體管理、容錯與監控等理論主題。
 
 ---
 
 ## 1. AllReduce 算法原理
 
-AllReduce 是分布式训练中最核心的集合通信原语——将 N 个 GPU 上的数据进行归约运算（求和、最大值等），再将结果广播到所有 GPU。梯度同步、参数聚合都依赖它。
+AllReduce 是分散式訓練中最核心的集合通訊原語——將 N 個 GPU 上的資料進行歸約運算（求和、最大值等），再將結果廣播到所有 GPU。梯度同步、參數聚合都依賴它。
 
-NCCL 根据数据量和 GPU 数量自动选择算法：
+NCCL 根據資料量和 GPU 數量自動選擇演算法：
 
-| 数据量       | 算法               | 延迟特征              | A100 8-GPU 实测 bus_bw  |
+| 資料量       | 算法               | 延遲特徵              | A100 8-GPU 實測 bus_bw  |
 | ------------ | ------------------ | --------------------- | ----------------------- |
-| < 32 KB      | Tree               | O(log₂N) 步，延迟最优 | ~5 GB/s                 |
-| 32 KB - 2 MB | Double Binary Tree | 平衡延迟和带宽        | ~50-150 GB/s            |
-| > 2 MB       | Ring               | O(N) 步但带宽高       | **225 GB/s** (NVSwitch) |
-| 大消息       | NVLS               | NVSwitch Gen3 组播在网归约，单遍完成 | —（A100 无 Gen3 Switch，不启用；NVSwitch Gen3 + NCCL 2.17+，即 Hopper 世代起的大消息首选） |
+| < 32 KB      | Tree               | O(log₂N) 步，延遲最優 | ~5 GB/s                 |
+| 32 KB - 2 MB | Double Binary Tree | 平衡延遲和頻寬        | ~50-150 GB/s            |
+| > 2 MB       | Ring               | O(N) 步但頻寬高       | **225 GB/s** (NVSwitch) |
+| 大消息       | NVLS               | NVSwitch Gen3 組播在網歸約，單遍完成 | —（A100 無 Gen3 Switch，不啟用；NVSwitch Gen3 + NCCL 2.17+，即 Hopper 世代起的大訊息首選） |
 
-> 注：< 32 KB / 32 KB-2 MB / > 2 MB 三档阈值为 NCCL 2.29.x + A100 8-GPU 环境的实测经验值，不是官方数字。NCCL 按拓扑与消息大小自动选择，版本间会调整。
+> 注：< 32 KB / 32 KB-2 MB / > 2 MB 三檔閾值為 NCCL 2.29.x + A100 8-GPU 環境的實測經驗值，不是官方數字。NCCL 按拓撲與訊息大小自動選擇，版本間會調整。
 
 ### 1.1 Ring AllReduce
 
-N 个 GPU 构成逻辑环，每个 GPU 只与左右邻居通信。分两阶段：
+N 個 GPU 構成邏輯環，每個 GPU 只與左右鄰居通訊。分兩階段：
 
-1. **Reduce-Scatter**：沿环传递 N-1 轮，每轮每个 GPU 发送 1/N 数据并归约接收到的数据。完成后每个 GPU 持有 1/N 完整归约结果。
-2. **AllGather**：再沿环传递 N-1 轮，每轮发送自己的归约结果。完成后所有 GPU 拥有完整结果。
+1. **Reduce-Scatter**：沿環傳遞 N-1 輪，每輪每個 GPU 发送 1/N 資料並歸約接收到的資料。完成後每個 GPU 持有 1/N 完整歸約結果。
+2. **AllGather**：再沿環傳遞 N-1 輪，每輪傳送自己的歸約結果。完成后所有 GPU 擁有完整結果。
 
-**理论传输量**：每 GPU 单向发送 `2 × (N-1)/N × data_size`，8 GPU 时约为 1.75× data_size。带宽效率高，但延迟随 N 线性增长。
+**理論傳輸量**：每 GPU 單向傳送 `2 × (N-1)/N × data_size`，8 GPU 時約為 1.75× data_size。頻寬效率高，但延遲隨 N 線性增長。
 
 ### 1.2 Tree AllReduce (含 NVSwitch)
 
-GPU 构成二叉树（或经 NVSwitch），归约沿树向上、广播沿树向下。只需 O(log₂N) 步：
+GPU 構成二叉樹（或經 NVSwitch），歸約沿樹向上、廣播沿樹向下。只需 O(log₂N) 步：
 
 - 8 GPU：3 步完成（vs Ring 的 14 步）
-- 延迟远低于 Ring，尤其适合小数据
-- NVSwitch 硬件做归约（SHARP）：数据在流经 Switch 时被截获归约，仅返回最终结果。注意代际：SHARP/NVLS 需要 NVSwitch Gen3（Hopper 世代起），A100 的 Gen2 Switch 不支持
+- 延遲遠低於 Ring，尤其適合小資料
+- NVSwitch 硬體做歸約（SHARP）：資料在流經 Switch 時被截獲歸約，僅返回最終結果。注意代際：SHARP/NVLS 需要 NVSwitch Gen3（Hopper 世代起），A100 的 Gen2 Switch 不支持
 
-A100 + NVSwitch 环境下，NCCL 在 > 2 MB 时仍选 Ring，因为 Ring 在 NVSwitch 全连接下也能高效运作。实测 7 GPU bus_bw 达 225 GB/s，与 P2P 单向 239 GB/s 仅差 6%。详见 [NCCL 基准测试方法论](04_nccl_benchmark.md)。
+A100 + NVSwitch 環境下，NCCL 在 > 2 MB 時仍選 Ring，因為 Ring 在 NVSwitch 全連線下也能高效運作。實測 7 GPU bus_bw 達 225 GB/s，與 P2P 單向 239 GB/s 僅差 6%。詳見 [NCCL 基準測試方法論](04_nccl_benchmark.md)。
 
-### 1.3 与 AllGather / ReduceScatter 的关系
+### 1.3 與 AllGather / ReduceScatter 的關係
 
-| 操作          | 方向                      | 典型场景         | 与 AllReduce 的关系              |
+| 操作          | 方向                      | 典型場景         | 與 AllReduce 的關係              |
 | ------------- | ------------------------- | ---------------- | -------------------------------- |
-| ReduceScatter | 归约 + 分发结果到各自 GPU | ZeRO 梯度分发    | AllReduce 的 Reduce-Scatter 阶段 |
-| AllGather     | 收集并广播                | ZeRO 参数收集    | AllReduce 的 AllGather 阶段      |
-| AllReduce     | 归约 + 广播完整结果       | 数据并行梯度同步 | ReduceScatter + AllGather        |
+| ReduceScatter | 歸約 + 分發結果到各自 GPU | ZeRO 梯度分发    | AllReduce 的 Reduce-Scatter 階段 |
+| AllGather     | 收集並廣播                | ZeRO 參數收集    | AllReduce 的 AllGather 階段      |
+| AllReduce     | 歸約 + 廣播完整結果       | 資料並行梯度同步 | ReduceScatter + AllGather        |
 
 ---
 
-## 2. GPUDirect RDMA 技术原理
+## 2. GPUDirect RDMA 技術原理
 
-GPUDirect 是 NVIDIA 为消除 PCIe 瓶颈提出的设备直连技术栈。在分布式训练中，它的核心价值是**让网络适配器直接访问 GPU 显存，完全绕过 CPU 和系统内存**。
+GPUDirect 是 NVIDIA 為消除 PCIe 瓶頸提出的裝置直連技術棧。在分散式訓練中，它的核心價值是**讓網路介面卡直接訪問 GPU 顯存，完全繞過 CPU 和系統記憶體**。
 
-### 2.1 数据路径对比
+### 2.1 資料路徑對比
 
-**传统路径（无 GPUDirect）**：
-
-```text
-GPU VRAM → CPU DRAM (via PCIe/DMA) → CPU → NIC → 网络
-```
-
-涉及两次 PCIe 传输（GPU→CPU、CPU→NIC）和一次 CPU 内存拷贝。
-
-**GPUDirect RDMA 路径**：
+**傳統路徑（無 GPUDirect）**：
 
 ```text
-GPU VRAM → NIC (via PCIe, direct DMA) → 网络
+GPU VRAM → CPU DRAM (via PCIe/DMA) → CPU → NIC → 網路
 ```
 
-一次 DMA 直通。延迟降低 40-60%，CPU 使用率降低 80%+，带宽利用率提升 20-30%。
+涉及兩次 PCIe 傳輸（GPU→CPU、CPU→NIC）和一次 CPU 記憶體複製。
 
-### 2.2 前置条件
+**GPUDirect RDMA 路徑**：
 
-- GPU 支持 GPUDirect RDMA（数据中心 GPU: V100/A100/H100）
-- 网卡支持 PCIe P2P（需与 GPU 在同一 PCIe 根总线段下）
-- `nvidia-smi topo -m` 确认 P2P 能力
-- `NCCL_NET_GDR_LEVEL`：限制 GDR 使用的 GPU-NIC 距离上限（GDR 默认已启用，该变量只调上限）；整数仅为兼容保留（`2` = `PXB`），推荐用字符串 `PXB`，即 GPU 与网卡之间最多跨两级 PCIe switch
+```text
+GPU VRAM → NIC (via PCIe, direct DMA) → 網路
+```
 
-> 深度阅读：[GPUDirect RDMA 与 Storage 技术详解](../../01_hardware_architecture/gpudirect/01_gpudirect_technology.md) | [GPUDirect P2P 技术详解](../../01_hardware_architecture/gpudirect/02_gpudirect_p2p.md)
+一次 DMA 直通。延遲降低 40-60%，CPU 使用率降低 80%+，頻寬利用率提升 20-30%。
 
-### 2.3 GPUDirect 与 NVLink 的关系
+### 2.2 前置條件
 
-GPUDirect P2P 是 CUDA 层的 API（`cudaDeviceEnablePeerAccess`），NVLink 是物理层的高速链路。当一个 GPU 通过 GPUDirect P2P 访问另一个 GPU 时：
+- GPU 支持 GPUDirect RDMA（資料中心 GPU: V100/A100/H100）
+- 網卡支援 PCIe P2P（需與 GPU 在同一 PCIe 根匯流排段下）
+- `nvidia-smi topo -m` 確認 P2P 能力
+- `NCCL_NET_GDR_LEVEL`：限制 GDR 使用的 GPU-NIC 距離上限（GDR 預設已啟用，該變數只調上限）；整數僅為相容保留（`2` = `PXB`），推薦用字串 `PXB`，即 GPU 與網卡之間最多跨兩級 PCIe switch
 
-- **有 NVLink 时**：走 NVLink（600 GB/s 双向），CUDA 自动优选
-- **无 NVLink 时**：走 PCIe P2P（~32 GB/s Gen4），需在同一 PCIe 根总线段下
-- **跨 NUMA node**：P2P 不可用，回退到 CPU 中转
+> 深度閱讀：[GPUDirect RDMA 與 Storage 技術詳解](../../01_hardware_architecture/gpudirect/01_gpudirect_technology.md) | [GPUDirect P2P 技術詳解](../../01_hardware_architecture/gpudirect/02_gpudirect_p2p.md)
 
-> 实测数据：A100 NVLink P2P 单向 239 GB/s，PCIe H2D 约 28 GB/s，差距 8.5 倍。详见 [GPU P2P 带宽实测](../../02_gpu_programming/04_profiling/08_p2p_bandwidth.md)。
+### 2.3 GPUDirect 與 NVLink 的關係
+
+GPUDirect P2P 是 CUDA 層的 API（`cudaDeviceEnablePeerAccess`），NVLink 是物理層的高速鏈路。當一個 GPU 透過 GPUDirect P2P 訪問另一個 GPU 時：
+
+- **有 NVLink 時**：走 NVLink（600 GB/s 雙向），CUDA 自動優選
+- **無 NVLink 時**：走 PCIe P2P（~32 GB/s Gen4），需在同一 PCIe 根匯流排段下
+- **跨 NUMA node**：P2P 不可用，回退到 CPU 中轉
+
+> 實測資料：A100 NVLink P2P 單向 239 GB/s，PCIe H2D 約 28 GB/s，差距 8.5 倍。詳見 [GPU P2P 頻寬實測](../../02_gpu_programming/04_profiling/08_p2p_bandwidth.md)。
 
 ---
 
-## 3. NCCL 自动拓扑检测
+## 3. NCCL 自動拓撲檢測
 
-NCCL 启动时通过 NVML 与 `/sys` 读取总线与 NVLink 拓扑，`nvidia-smi topo -m` 是同一份信息的人工视图；NCCL 据此构建通信拓扑图，为每对 GPU 选择最优路径。
+NCCL 啟動時透過 NVML 與 `/sys` 讀取匯流排與 NVLink 拓撲，`nvidia-smi topo -m` 是同一份資訊的人工檢視；NCCL 據此構建通訊拓撲圖，為每對 GPU 選擇最優路徑。
 
-### 3.1 单节点检测优先级
+### 3.1 單節點檢測優先順序
 
 ```text
 NVLink (NV12) > PCIe P2P (PIX) > PCIe via CPU (NODE) > 跨 socket (SYS)
 ```
 
-| 拓扑标识 | 含义                                | NCCL 路径      | 带宽 (A100)   |
+| 拓撲標識 | 含義                                | NCCL 路徑      | 頻寬 (A100)   |
 | -------- | ----------------------------------- | -------------- | ------------- |
-| **NV12** | NVLink 3.0, 12 links 全通           | NVLink 直连    | 600 GB/s 双向 |
+| **NV12** | NVLink 3.0, 12 links 全通           | NVLink 直連    | 600 GB/s 雙向 |
 | **PIX**  | 同一 PCIe switch 下                 | PCIe P2P       | ~32 GB/s      |
-| **NODE** | 同一 NUMA node, 经 PCIe Host Bridge | CPU 中转       | ~28 GB/s      |
-| **SYS**  | 跨 NUMA node, 经 QPI/UPI            | CPU 中转 + SMP | 更低          |
+| **NODE** | 同一 NUMA node, 經 PCIe Host Bridge | CPU 中轉       | ~28 GB/s      |
+| **SYS**  | 跨 NUMA node, 經 QPI/UPI            | CPU 中轉 + SMP | 更低          |
 
-### 3.2 多节点检测
+### 3.2 多節點檢測
 
-跨节点时 NCCL 优先 InfiniBand (RDMA)，其次 RoCE (RDMA over Ethernet)，最后 TCP Socket。检测通过 `ibv_devinfo` 和网卡能力协商实现。
+跨節點時 NCCL 優先 InfiniBand (RDMA)，其次 RoCE (RDMA over Ethernet)，最后 TCP Socket。檢測透過 `ibv_devinfo` 和網卡能力協商實現。
 
-### 3.3 拓扑异常案例
+### 3.3 拓撲異常案例
 
-GPU 7 在我们的测试环境中显示全 SYS/NODE/PXB 连接（无 NVLink）。NCCL 检测到后会回退到 CPU 中转路径，AllReduce 带宽从 225 GB/s 跌至 ~28 GB/s。详见 [NVLink 诊断与实操](../../01_hardware_architecture/nvlink/nvlink_diagnostics.md) 和 [GPU 集群健康检查](../01_gpu_ops/06_gpu_health_check.md)。
+GPU 7 在我們的測試環境中顯示全 SYS/NODE/PXB 連線（無 NVLink）。NCCL 檢測到後會回退到 CPU 中轉路徑，AllReduce 頻寬從 225 GB/s 跌至 ~28 GB/s。詳見 [NVLink 診斷與實操](../../01_hardware_architecture/nvlink/nvlink_diagnostics.md) 和 [GPU 叢集健康檢查](../01_gpu_ops/06_gpu_health_check.md)。
 
 ---
 
-## 4. 性能建模与预测
+## 4. 效能建模與預測
 
 ### 4.1 Hockney 通信模型
 
-基础模型：`T_comm = α + β × message_size`，其中 α 为启动延迟（startup latency），β 为每字节传输时间（1/bandwidth）。
+基礎模型：`T_comm = α + β × message_size`，其中 α 為啟動延遲（startup latency），β 為每位元組傳輸時間（1/bandwidth）。
 
-**Ring AllReduce 总时间**：
+**Ring AllReduce 總時間**：
 
 ```text
 T_ring = 2(P-1) × α + 2(P-1)/P × message_size × β
 ```
 
-**Tree AllReduce 总时间**：
+**Tree AllReduce 總時間**：
 
 ```text
 T_tree = 2log₂(P) × α + 2 × message_size × β
 ```
 
-**决策边界**：当 `message_size < α/β × log₂(P)/(P-1)` 时 Tree 更快（延迟主导），否则 Ring 更快（带宽主导）。A100 上实测拐点约在 2 MB。
+**決策邊界**：當 `message_size < α/β × log₂(P)/(P-1)` 時 Tree 更快（延遲主導），否則 Ring 更快（頻寬主導）。A100 上實測拐點約在 2 MB。
 
-### 4.2 A100 实测验证
+### 4.2 A100 實測驗證
 
-从 [NCCL 基准测试](04_nccl_benchmark.md) 的 7 GPU 数据：
+從 [NCCL 基準測試](04_nccl_benchmark.md) 的 7 GPU 資料：
 
-| 数据量 | bus_bw           | 分析                        |
+| 資料量 | bus_bw           | 分析                        |
 | ------ | ---------------- | --------------------------- |
-| 1 MB   | 16.8 GB/s (8.5%) | α 主导，带宽远未饱和        |
-| 8 MB   | 89 GB/s (45%)    | 过渡区                      |
-| 64 MB  | 170 GB/s (86%)   | 接近 β 主导                 |
-| 256 MB | 206 GB/s (91%)   | 接近硬件极限                |
-| 1 GB   | **225 GB/s**     | Ring 饱和，效率 ~94% vs P2P |
+| 1 MB   | 16.8 GB/s (8.5%) | α 主導，頻寬遠未飽和        |
+| 8 MB   | 89 GB/s (45%)    | 過渡區                      |
+| 64 MB  | 170 GB/s (86%)   | 接近 β 主導                 |
+| 256 MB | 206 GB/s (91%)   | 接近硬體極限                |
+| 1 GB   | **225 GB/s**     | Ring 飽和，效率 ~94% vs P2P |
 
-### 4.3 扩展性分析
+### 4.3 擴展性分析
 
-- **Strong Scaling**：固定总数据量，增加 GPU 数 P。效率 `E(P) = T(1) / (P × T(P)) × 100%`。通信开销随 P 增长，小数据量时扩展性受限于 α。
-- **Weak Scaling**：每 GPU 数据量固定。效率 `E(P) = T(1) / T(P) × 100%`。NVSwitch 架构下 Weak Scaling 接近线性——bus_bw 从 2 GPU (197 GB/s) → 7 GPU (225 GB/s) 反而上升。
+- **Strong Scaling**：固定總資料量，增加 GPU 數 P。效率 `E(P) = T(1) / (P × T(P)) × 100%`。通訊開銷隨 P 增長，小資料量時擴展性受限於 α。
+- **Weak Scaling**：每 GPU 資料量固定。效率 `E(P) = T(1) / T(P) × 100%`。NVSwitch 架構下 Weak Scaling 接近線性——bus_bw 從 2 GPU (197 GB/s) → 7 GPU (225 GB/s) 反而上升。
 
 ---
 
-## 5. 瓶颈分析框架
+## 5. 瓶頸分析框架
 
-定位分布式训练中通信性能问题的系统化方法：
+定位分散式訓練中通訊效能問題的系統化方法：
 
-### 5.1 三层瓶颈分类
+### 5.1 三層瓶頸分類
 
-| 瓶颈类型 | 指标特征                                | 排查工具                         | 优化方向                |
+| 瓶頸類型 | 指標特徵                                | 排查工具                         | 最佳化方向                |
 | -------- | --------------------------------------- | -------------------------------- | ----------------------- |
-| 计算瓶颈 | GPU SM Active > 80%，通信 < 10% 总时间  | `ncu --set basic`                | 优化 kernel，增大 batch |
-| 通信瓶颈 | 通信 > 30% 总时间，网络带宽利用率 > 80% | `nsys profile`, `all_reduce_perf` | 换更快网络，减少通信量  |
-| 内存瓶颈 | HBM 带宽利用率 > 85%，频繁分配/释放     | `dcgmi dmon -e 204`, `ncu`       | 内存池，梯度累计        |
+| 計算瓶頸 | GPU SM Active > 80%，通信 < 10% 總時間  | `ncu --set basic`                | 最佳化 kernel，增大 batch |
+| 通訊瓶頸 | 通信 > 30% 總時間，網路頻寬利用率 > 80% | `nsys profile`, `all_reduce_perf` | 換更快網路，減少通訊量  |
+| 記憶體瓶頸 | HBM 頻寬利用率 > 85%，頻繁分配/釋放     | `dcgmi dmon -e 204`, `ncu`       | 記憶體池，梯度累計        |
 
 ### 5.2 排查流程
 
 ```text
-发现问题 → nsys 看 timeline（谁在等谁）
+發現問題 → nsys 看 timeline（誰在等誰）
           → 若 CPU 等 GPU → ncu 看 kernel（compute/memory bound）
-          → 若 GPU 等通信 → all_reduce_perf 测带宽 → 对照 topo 拓扑
-          → 若等网络 IO → ib_write_bw 测 RDMA → 检查交换机/线缆
+          → 若 GPU 等通信 → all_reduce_perf 測頻寬 → 對照 topo 拓撲
+          → 若等網路 IO → ib_write_bw 測 RDMA → 檢查交換機/線纜
 ```
 
-> 工具链参考：[DCGM 监控实操](../01_gpu_ops/05_dcgm_monitoring.md) | [Nsight Compute CLI](../../02_gpu_programming/04_profiling/06_nsight_compute_cli.md) | [Nsight Systems CLI](../../02_gpu_programming/04_profiling/07_nsight_systems_cli.md)
+> 工具鏈參考：[DCGM 監控實操](../01_gpu_ops/05_dcgm_monitoring.md) | [Nsight Compute CLI](../../02_gpu_programming/04_profiling/06_nsight_compute_cli.md) | [Nsight Systems CLI](../../02_gpu_programming/04_profiling/07_nsight_systems_cli.md)
 
 ---
 
-## 6. 高级优化技术
+## 6. 高階最佳化技術
 
-### 6.1 通信与计算重叠
+### 6.1 通訊與計算重疊
 
-利用 CUDA Stream 将反向传播计算与梯度 AllReduce 重叠执行：
+利用 CUDA Stream 將反向傳播計算與梯度 AllReduce 重疊執行：
 
 ```text
-传统方式：Layer N 反向 → AllReduce 梯度 → Layer N-1 反向
-重叠方式：Layer N 反向 ∥ AllReduce 梯度（异步启动，不等结果）
+傳統方式：Layer N 反向 → AllReduce 梯度 → Layer N-1 反向
+重疊方式：Layer N 反向 ∥ AllReduce 梯度（非同步啟動，不等結果）
 ```
 
-重叠效率 = `min(T_compute, T_comm) / max(T_compute, T_comm)`。理想情况下 T_total = max(T_compute, T_comm)。注意：PyTorch DDP 的反向/通信重叠默认来自 bucket 机制（按 bucket 切分梯度、边算边传），`gradient_as_bucket_view` 参数默认为 False，与该重叠机制无关。
+重疊效率 = `min(T_compute, T_comm) / max(T_compute, T_comm)`。理想情況下 T_total = max(T_compute, T_comm)。注意：PyTorch DDP 的反向/通訊重疊預設來自 bucket 機制（按 bucket 切分梯度、邊算邊傳），`gradient_as_bucket_view` 參數預設為 False，與該重疊機制無關。
 
-### 6.2 梯度压缩
+### 6.2 梯度壓縮
 
-减少通信量，以微小精度损失换取带宽：
+減少通訊量，以微小精度損失換取頻寬：
 
-| 方法        | 压缩比     | 精度影响   | 适用场景            |
+| 方法        | 壓縮比     | 精度影響   | 適用場景            |
 | ----------- | ---------- | ---------- | ------------------- |
-| FP32 → FP16 | 2:1        | 极小       | 混合精度训练标配    |
-| FP32 → INT8 | 4:1        | 需校准     | 推理、大 batch 训练 |
-| Top-K 稀疏  | 10:1-100:1 | 依赖稀疏度 | 通信瓶颈严重的场景  |
-| PowerSGD    | 可变       | 收敛略慢   | 低带宽网络          |
+| FP32 → FP16 | 2:1        | 極小       | 混合精度訓練標配    |
+| FP32 → INT8 | 4:1        | 需校准     | 推理、大 batch 訓練 |
+| Top-K 稀疏  | 10:1-100:1 | 依賴稀疏度 | 通訊瓶頸嚴重的場景  |
+| PowerSGD    | 可變       | 收斂略慢   | 低頻寬網路          |
 
-### 6.3 NCCL 环境变量调优
+### 6.3 NCCL 環境變數調優
 
-关键旋钮（详见 [NCCL 基准测试](04_nccl_benchmark.md)）：
+關鍵旋鈕（詳見 [NCCL 基準測試](04_nccl_benchmark.md)）：
 
-| 变量                 | 作用          | A100 建议值            |
+| 變數                 | 作用          | A100 建議值            |
 | -------------------- | ------------- | ---------------------- |
-| `NCCL_P2P_LEVEL`     | 强制 P2P 路径 | `NVL` (优先 NVLink)    |
-| `NCCL_IB_DISABLE`    | 禁用 IB       | `1` (纯单机 NVLink 时) |
-| `NCCL_ALGO`          | 强制算法      | 通常让 NCCL 自动选     |
-| `NCCL_MIN_NCHANNELS` | 最小通道数    | `8` (增加并行度)       |
-| `NCCL_NTHREADS`      | CUDA 线程数   | `256-512`              |
+| `NCCL_P2P_LEVEL`     | 強制 P2P 路徑 | `NVL` (優先 NVLink)    |
+| `NCCL_IB_DISABLE`    | 禁用 IB       | `1` (純單機 NVLink 時) |
+| `NCCL_ALGO`          | 強制演算法      | 通常讓 NCCL 自動選     |
+| `NCCL_MIN_NCHANNELS` | 最小通道數    | `8` (增加並行度)       |
+| `NCCL_NTHREADS`      | CUDA 執行緒數   | `256-512`              |
 
 ---
 
-## 7. 内存与内部机制
+## 7. 記憶體與內部機制
 
-### 7.1 NCCL 通信内存模型
+### 7.1 NCCL 通訊記憶體模型
 
-NCCL 为每个通信操作管理三级缓冲：
+NCCL 為每個通訊操作管理三級緩衝：
 
-| 缓冲类型            | 位置     | 用途           | 管理策略                       |
+| 緩衝類型            | 位置     | 用途           | 管理策略                       |
 | ------------------- | -------- | -------------- | ------------------------------ |
-| Send Buffer         | GPU VRAM | 待发送数据的源 | 用户提供，NCCL 直接读取        |
-| Receive Buffer      | GPU VRAM | 接收数据的目标 | 用户提供，NCCL 直接写入        |
-| Intermediate Buffer | GPU VRAM | 归约中间结果   | NCCL 内部分配，双缓冲/环形缓冲 |
+| Send Buffer         | GPU VRAM | 待傳送資料的源 | 使用者提供，NCCL 直接讀取        |
+| Receive Buffer      | GPU VRAM | 接收資料的目標 | 使用者提供，NCCL 直接寫入        |
+| Intermediate Buffer | GPU VRAM | 歸約中間結果   | NCCL 內部分配，雙緩衝/環形緩衝 |
 
-A100 的 HBM2e (5120-bit, 2039 GB/s) 为 NCCL 提供了充足的内部缓冲带宽。详见 [HBM 显存技术演进](../../01_hardware_architecture/performance/01_hbm_evolution.md) | [GPU 内存层次结构](../../01_hardware_architecture/nvidia/understand_gpu_architecture/02_gpu_memory.md)。
+A100 的 HBM2e (5120-bit, 2039 GB/s) 為 NCCL 提供了充足的內部緩衝頻寬。詳見 [HBM 顯存技術演進](../../01_hardware_architecture/performance/01_hbm_evolution.md) | [GPU 記憶體層次結構](../../01_hardware_architecture/nvidia/understand_gpu_architecture/02_gpu_memory.md)。
 
-### 7.2 AllReduce 执行流水线
+### 7.2 AllReduce 執行流水線
 
-NCCL 将 AllReduce 拆分为异步流水线：
+NCCL 將 AllReduce 拆分為非同步流水線：
 
 ```text
-排队 → 拓扑分析(首次) → 资源分配(GPU Stream + Buffer)
-  → Reduce-Scatter(N-1轮 Ring/Tree)
-  → AllGather(N-1轮) → 完成通知 → 释放资源
+排隊 → 拓撲分析(首次) → 資源分配(GPU Stream + Buffer)
+  → Reduce-Scatter(N-1輪 Ring/Tree)
+  → AllGather(N-1輪) → 完成通知 → 釋放資源
 ```
 
-每轮内部通过 CUDA Stream 实现 kernel 执行与数据传输的重叠。
+每輪內部透過 CUDA Stream 實現 kernel 執行與資料傳輸的重疊。
 
-### 7.3 缓存与一致性
+### 7.3 快取與一致性
 
-- 统一 L1/Shared Memory（A100 为 192 KB/SM）和 L2 (A100 40 MB) 被 NCCL 用于缓冲小块数据
-- GPU 使用弱一致性模型，NCCL 在需要时通过 `__threadfence_system()` 确保跨 GPU 可见性
-- GPUDirect RDMA 涉及 PCIe 的 DMA 一致性，需 BAR1 映射正确配置
+- 統一 L1/Shared Memory（A100 為 192 KB/SM）和 L2 (A100 40 MB) 被 NCCL 用於緩衝小塊資料
+- GPU 使用弱一致性模型，NCCL 在需要時透過 `__threadfence_system()` 確保跨 GPU 可見性
+- GPUDirect RDMA 涉及 PCIe 的 DMA 一致性，需 BAR1 對映正確配置
 
 ---
 
-## 8. 容错与监控
+## 8. 容錯與監控
 
-### 8.1 错误检测层次
+### 8.1 錯誤檢測層次
 
-| 层级      | 机制                           | 恢复方式                     |
+| 層級      | 機制                           | 恢復方式                     |
 | --------- | ------------------------------ | ---------------------------- |
-| HBM       | ECC 单比特自动纠正，双比特检测 | 驱动记录错误计数，超阈值告警 |
-| NVLink    | CRC 校验                       | Replay 重传，错误计数器监控  |
-| PCIe      | AER (Advanced Error Reporting) | 驱动层重试或链路重训练       |
-| NCCL 软件 | `ncclResult_t` 错误码          | 上层框架重试或告警           |
+| HBM       | ECC 單位元自動糾正，雙位元檢測 | 驅動記錄錯誤計數，超閾值告警 |
+| NVLink    | CRC 校驗                       | Replay 重傳，錯誤計數器監控  |
+| PCIe      | AER (Advanced Error Reporting) | 驅動層重試或鏈路重訓練       |
+| NCCL 軟體 | `ncclResult_t` 錯誤碼          | 上層框架重試或告警           |
 
-### 8.2 NCCL 错误码速查
+### 8.2 NCCL 錯誤碼速查
 
-| 错误码                   | 含义          | 常见原因                 |
+| 錯誤碼                   | 含義          | 常見原因                 |
 | ------------------------ | ------------- | ------------------------ |
 | `ncclSuccess`            | 成功          | —                        |
-| `ncclUnhandledCudaError` | CUDA 侧错误   | OOM, kernel launch 失败  |
-| `ncclSystemError`        | 系统资源不足  | 内存不足, 文件描述符耗尽 |
-| `ncclInternalError`      | NCCL 内部错误 | 通信链路异常, 参数无效   |
-| `ncclInvalidArgument`    | 参数错误      | count/type/comm 不匹配   |
-| `ncclInvalidUsage`       | 用法错误      | 重复初始化, 已销毁 comm  |
+| `ncclUnhandledCudaError` | CUDA 側錯誤   | OOM, kernel launch 失敗  |
+| `ncclSystemError`        | 系統資源不足  | 記憶體不足, 檔案描述符耗盡 |
+| `ncclInternalError`      | NCCL 內部錯誤 | 通訊鏈路異常, 參數無效   |
+| `ncclInvalidArgument`    | 參數錯誤      | count/type/comm 不匹配   |
+| `ncclInvalidUsage`       | 用法錯誤      | 重複初始化, 已銷燬 comm  |
 
-### 8.3 容错策略
+### 8.3 容錯策略
 
-- **检查点机制**：定期保存模型参数 + 优化器状态 + 通信拓扑快照，支持从故障恢复
-- **弹性训练**：NCCL 本身不支持 communicator 运行中的动态成员变更（拓扑在初始化时定型）。节点加入/离开靠上层框架（如 TorchElastic）在成员变化时重启进程、重建 communicator
-- **故障隔离**：NCCL 不做单 GPU 降级。初始化阶段探测到异常路径会直接报错退出，通信中的链路异常会置 communicator 为错误态；恢复都需要上层重建 communicator
+- **檢查點機制**：定期儲存模型參數 + 最佳化器狀態 + 通訊拓撲快照，支援從故障恢復
+- **彈性訓練**：NCCL 本身不支持 communicator 執行中的動態成員變更（拓撲在初始化時定型）。節點加入/離開靠上層框架（如 TorchElastic）在成員變化時重啟行程、重建 communicator
+- **故障隔離**：NCCL 不做單 GPU 降級。初始化階段探測到異常路徑會直接報錯退出，通訊中的鏈路異常會置 communicator 為錯誤態；恢復都需要上層重建 communicator
 
 ---
 
-## 参考
+## 參考
 
-- [NCCL 官方文档](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/index.html)
-- [GPUDirect RDMA 文档](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)
-- [NCCL 环境变量参考](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html)
+- [NCCL 官方文件](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/index.html)
+- [GPUDirect RDMA 文件](https://docs.nvidia.com/cuda/gpudirect-rdma/index.html)
+- [NCCL 環境變數參考](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html)

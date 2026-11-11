@@ -1,73 +1,73 @@
-# Transformer 架构详解——从自注意力到完整解码器
+# Transformer 架構詳解——從自注意力到完整解碼器
 
-2017 年之前，处理序列数据的主流架构是 RNN 和 LSTM。它们在机器翻译、语音识别等任务上统治了近十年，但有一个结构性的硬伤：**第 t 个 token 必须等第 t-1 个算完才能开始**。这个串行依赖带来了两个无法绕过的问题——序列越长训练越慢（GPU 的并行能力被浪费），以及跨长距离的信息会随着梯度传播逐步衰减甚至消失。
+2017 年之前，處理序列資料的主流架構是 RNN 和 LSTM。它們在機器翻譯、語音識別等任務上統治了近十年，但有一個結構性的硬傷：**第 t 個 token 必須等第 t-1 個算完才能開始**。這個序列依賴帶來了兩個無法繞過的問題——序列越長訓練越慢（GPU 的並行能力被浪費），以及跨長距離的資訊會隨著梯度傳播逐步衰減甚至消失。
 
-同年，Vaswani 等人的《Attention Is All You Need》用**自注意力（Self-Attention）**一次性解决了这两个问题：每个 token 直接关注序列中所有其他 token，没有先后顺序，只有相关度权重。这个简单的想法催生了 Transformer 架构，进而演化为今天所有大语言模型（GPT、LLaMA、Qwen、DeepSeek、Claude）的共同基础。
+同年，Vaswani 等人的《Attention Is All You Need》用**自注意力（Self-Attention）**一次性解決了這兩個問題：每個 token 直接關注序列中所有其他 token，沒有先後順序，只有相關度權重。這個簡單的想法催生了 Transformer 架構，進而演化為今天所有大語言模型（GPT、LLaMA、Qwen、DeepSeek、Claude）的共同基礎。
 
-但切换到全并行架构并非没有代价。去掉串行顺序意味着位置信息丢失——要让模型区分「我打你」和「你打我」，靠权重表是不够的。同时，全注意力在长序列上的计算量是 O(n²)，当上下文从 2K 扩展到 128K 时，这个代价变得不可忽视。
+但切換到全並行架構並非沒有代價。去掉序列順序意味著位置資訊丟失——要讓模型區分「我打你」和「你打我」，靠權重表是不夠的。同時，全注意力在長序列上的計算量是 O(n²)，當上下文從 2K 擴展到 128K 時，這個代價變得不可忽視。
 
-本文从零拆解 Transformer 的核心组件。阅读目标是：**读完能看懂一份 `modeling_llama.py` 级别的源码**，并理解每个组件解决了什么问题、又带来了什么新问题。
+本文從零拆解 Transformer 的核心元件。閱讀目標是：**讀完能看懂一份 `modeling_llama.py` 級別的原始碼**，並理解每個元件解決了什麼問題、又帶來了什麼新問題。
 
 ---
 
-## 一、问题：RNN 的串行瓶颈
+## 一、問題：RNN 的序列瓶頸
 
-RNN/LSTM 处理序列的方式是逐步迭代——隐藏状态 $h_t$ 由 $h_{t-1}$ 和当前输入 $x_t$ 共同决定。
+RNN/LSTM 處理序列的方式是逐步迭代——隱藏狀態 $h_t$ 由 $h_{t-1}$ 和當前輸入 $x_t$ 共同決定。
 
 ```text
 RNN:  token1 → token2 → token3 → ... → tokenN  （串行，O(n) 步）
 ```
 
-这个设计有两个致命缺陷：
+這個設計有兩個致命缺陷：
 
-- **无法并行训练**：计算 token_N 必须先算完前面 N-1 步。序列越长，一轮前向/反向传播的时间线性增长。
-- **长距离依赖衰减**：梯度和信息在反向传播时穿过几十个时间步后，会因连乘效应指数级衰减（梯度消失）或放大（梯度爆炸）。
+- **無法並行訓練**：計算 token_N 必須先算完前面 N-1 步。序列越長，一輪前向/反向傳播的時間線性增長。
+- **長距離依賴衰減**：梯度和資訊在反向傳播時穿過幾十個時間步後，會因連乘效應指數級衰減（梯度消失）或放大（梯度爆炸）。
 
-这两个问题在 2014-2016 年间催生了大量的变体方案——LSTM 的门控机制、注意力作为 RNN 的辅助模块——但本质上仍在串行框架内打补丁。
+這兩個問題在 2014-2016 年間催生了大量的變體方案——LSTM 的門控機制、注意力作為 RNN 的輔助模組——但本質上仍在序列框架內打補丁。
 
-## 二、方案：自注意力——让每个 token 同时看见所有 token
+## 二、方案：自注意力——讓每個 token 同時看見所有 token
 
-Transformer 的答案是放弃串行假设：**不再通过隐藏状态逐步传递信息，而是让每个 token 直接查询序列中的每个 token。**
-
-```text
-Transformer: 每个 token ⇄ 所有 token（并行，O(1) 步）
-```
-
-这个「直接查询」机制就是自注意力。
-
-### 2.1 Q / K / V：信息检索的类比
-
-自注意力可以用一个信息检索的类比来理解：
+Transformer 的答案是放棄序列假設：**不再透過隱藏狀態逐步傳遞資訊，而是讓每個 token 直接查詢序列中的每個 token。**
 
 ```text
-Q (Query)  = x · W_Q    —— "我在找什么？"
-K (Key)    = x · W_K    —— "我能提供什么？"
-V (Value)  = x · W_V    —— "如果被选中，我给出什么信息？"
+Transformer: 每個 token ⇄ 所有 token（並行，O(1) 步）
 ```
 
-每个 token 的 Embedding 向量通过三个不同的线性变换，分别投影为查询向量 Q、键向量 K、值向量 V。$W_Q$、$W_K$、$W_V$ 是可学习的权重矩阵，维度为 $d_{\text{model}} \times d_k$（通常 $d_k = d_{\text{model}} / n_{\text{heads}}$）。
+這個「直接查詢」機制就是自注意力。
 
-这个三元组设计来自信息检索：Query 代表用户的搜索意图，Key 代表文档的索引标签，Value 代表文档的实际内容。把每个 token 既当作「提问者」又当作「被检索的文档」，就得到了自注意力。
+### 2.1 Q / K / V：資訊檢索的類比
 
-### 2.2 注意力分数：四步计算
+自注意力可以用一個資訊檢索的類比來理解：
+
+```text
+Q (Query)  = x · W_Q    —— "我在找什麼？"
+K (Key)    = x · W_K    —— "我能提供什麼？"
+V (Value)  = x · W_V    —— "如果被選中，我給出什麼資訊？"
+```
+
+每個 token 的 Embedding 向量透過三個不同的線性變換，分別投影為查詢向量 Q、鍵向量 K、值向量 V。$W_Q$、$W_K$、$W_V$ 是可學習的權重矩陣，維度為 $d_{\text{model}} \times d_k$（通常 $d_k = d_{\text{model}} / n_{\text{heads}}$）。
+
+這個三元組設計來自資訊檢索：Query 代表使用者的搜尋意圖，Key 代表文件的索引標籤，Value 代表文件的實際內容。把每個 token 既當作「提問者」又當作「被檢索的文件」，就得到了自注意力。
+
+### 2.2 注意力分數：四步計算
 
 $$
 \text{Attention}(Q, K, V) = \text{softmax}\!\left(\frac{Q \cdot K^\top}{\sqrt{d_k}}\right) \cdot V
 $$
 
-步骤拆解：
+步驟拆解：
 
-1. $Q \cdot K^\top$ → 得分矩阵 S（token i 对 token j 的原始相关度）
-2. $S / \sqrt{d_k}$ → 缩放，防止大点积值导致 softmax 梯度消失
-3. $\text{softmax}$ → 归一化为概率分布（每个 token 对所有 token 的注意力权重之和 = 1）
-4. $\times V$ → 加权求和，得到每个 token 的「上下文感知」表示
+1. $Q \cdot K^\top$ → 得分矩陣 S（token i 對 token j 的原始相關度）
+2. $S / \sqrt{d_k}$ → 縮放，防止大點積值導致 softmax 梯度消失
+3. $\text{softmax}$ → 歸一化為機率分佈（每個 token 對所有 token 的注意力權重之和 = 1）
+4. $\times V$ → 加權求和，得到每個 token 的「上下文感知」表示
 
-### 2.3 为什么要除以 √d_k？
+### 2.3 為什麼要除以 √d_k？
 
-自注意力有一个容易被忽视的数学细节。当 $d_k$ 较大时，$Q \cdot K$ 的点积结果的方差会增大（约等于 $d_k$）。大的输入值让 softmax 进入饱和区——输出几乎变成 one-hot 向量，梯度趋近于零。除以 $\sqrt{d_k}$ 将方差压回 1，让梯度在训练中保持健康。
+自注意力有一個容易被忽視的數學細節。當 $d_k$ 較大時，$Q \cdot K$ 的點積結果的方差會增大（約等於 $d_k$）。大的輸入值讓 softmax 進入飽和區——輸出幾乎變成 one-hot 向量，梯度趨近於零。除以 $\sqrt{d_k}$ 將方差壓回 1，讓梯度在訓練中保持健康。
 
 ```python
-# PyTorch 实现骨架
+# PyTorch 實現骨架
 def self_attention(Q, K, V, mask=None):
     d_k = Q.size(-1)
     scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(d_k)
@@ -77,15 +77,15 @@ def self_attention(Q, K, V, mask=None):
     return torch.matmul(attn_weights, V)
 ```
 
-这个简单的缩放操作解决了梯度健康问题，但它不解决自注意力的另一个根本限制——一组 Q/K/V 只能表达一种「相关性的定义」。
+這個簡單的縮放操作解決了梯度健康問題，但它不解決自注意力的另一個根本限制——一組 Q/K/V 只能表達一種「相關性的定義」。
 
 ---
 
-## 三、方案延伸：多头注意力——从单视角到多视角
+## 三、方案延伸：多頭注意力——從單視角到多視角
 
-单组 Q/K/V 只能捕捉一种关系模式。比如在处理「苹果很好吃」时，一组注意力可能关注「苹果→好」的语义关联，但它无法同时关注「苹果→名词主语」的语法角色和「苹果→吃」的动作搭配。
+單組 Q/K/V 只能捕捉一種關係模式。比如在處理「蘋果很好吃」時，一組注意力可能關注「蘋果→好」的語義關聯，但它無法同時關注「蘋果→名詞主語」的語法角色和「蘋果→吃」的動作搭配。
 
-多头注意力（Multi-Head Attention）的解法是**并行运行多个独立的注意力头**，每个头有自己的 W_Q、W_K、W_V，在各自的低维子空间中计算：
+多頭注意力（Multi-Head Attention）的解法是**並行執行多個獨立的注意力頭**，每個頭有自己的 W_Q、W_K、W_V，在各自的低維子空間中計算：
 
 $$
 \begin{aligned}
@@ -94,29 +94,29 @@ $$
 \end{aligned}
 $$
 
-- 每个 head 的维度为 d_k = d_model / h（如 512 / 8 = 64）
-- 所有 head 的输出拼接后经 W_O 投影回 d_model
-- 总计算量与等效的单头注意力相同（并行度换表达力）
+- 每個 head 的維度為 d_k = d_model / h（如 512 / 8 = 64）
+- 所有 head 的輸出拼接後經 W_O 投影回 d_model
+- 總計算量與等效的單頭注意力相同（並行度換表達力）
 
-**代价**：多头增加了模型的理解能力，但也让注意力的可解释性变得更困难——面对 32 个头、每层一张注意力热力图，人类几乎无法直观理解模型究竟在「关注」什么。此外，多头之间的信息完全独立，直到拼接步骤才交汇——这意味着每个头可能学习到冗余或退化的注意力模式。
+**代價**：多頭增加了模型的理解能力，但也讓注意力的可解釋性變得更困難——面對 32 個頭、每層一張注意力熱力圖，人類幾乎無法直觀理解模型究竟在「關注」什麼。此外，多頭之間的資訊完全獨立，直到拼接步驟才交匯——這意味著每個頭可能學習到冗餘或退化的注意力模式。
 
 ---
 
-## 四、前馈网络：注意力之后的逐 token 变换
+## 四、前饋網路：注意力之后的逐 token 變換
 
-自注意力让 token 之间交换信息，但交换完后，每个 token 的表示还需要一次独立的非线性变换。这个任务由前馈网络（FFN）承担：
+自注意力讓 token 之間交換資訊，但交換完後，每個 token 的表示還需要一次獨立的非線性變換。這個任務由前饋網路（FFN）承擔：
 
 $$
-\text{FFN}(x) = W_2 \cdot \sigma(W_1 \cdot x) \qquad\text{（现代 LLM 通常去掉偏置项 ）}
+\text{FFN}(x) = W_2 \cdot \sigma(W_1 \cdot x) \qquad\text{（現代 LLM 通常去掉偏置項 ）}
 $$
 
-- 先将 d_model 维投影到 d_ff 维（通常 d_ff = 4 × d_model），再投影回 d_model
-- FFN 是 Transformer block 中参数量最大的部分，约占 2/3
-- σ 是激活函数：原始论文用 ReLU，现代 LLM 几乎全部换为 SwiGLU
+- 先將 d_model 維投影到 d_ff 維（通常 d_ff = 4 × d_model），再投影回 d_model
+- FFN 是 Transformer block 中參數量最大的部分，約佔 2/3
+- σ 是激活函式：原始論文用 ReLU，現代 LLM 幾乎全部換為 SwiGLU
 
-### 4.1 SwiGLU：门控机制的引入
+### 4.1 SwiGLU：門控機制的引入
 
-从 ReLU 到 GELU 再到 SwiGLU 的演进，反映了 LLM 架构中的一个核心发现：**让网络自己学会「哪些信息该通过、哪些该抑制」，比用一个固定的激活函数更有效。**
+從 ReLU 到 GELU 再到 SwiGLU 的演進，反映了 LLM 架構中的一個核心發現：**讓網路自己學會「哪些資訊該透過、哪些該抑制」，比用一個固定的激活函式更有效。**
 
 $$
 \begin{aligned}
@@ -125,7 +125,7 @@ $$
 \end{aligned}
 $$
 
-SwiGLU 引入了一个可学习的「门」——`x · W_gate`。这个门与经 SiLU 激活的主通路做逐元素乘法，让网络在每个 token、每个维度上独立决定信息通过量。代价是参数量增加约 33%（多了一个 W_gate 矩阵），但训练稳定性和收敛速度的提升足以抵消这个开销。
+SwiGLU 引入了一個可學習的「門」——`x · W_gate`。這個門與經 SiLU 激活的主通路做逐元素乘法，讓網路在每個 token、每個維度上獨立決定資訊透過量。代價是參數量增加約 33%（多了一個 W_gate 矩陣），但訓練穩定性和收斂速度的提升足以抵消這個開銷。
 
 | 模型系列         | FFN 激活 | d_ff 比例     |
 | ---------------- | -------- | ------------- |
@@ -136,90 +136,90 @@ SwiGLU 引入了一个可学习的「门」——`x · W_gate`。这个门与经
 
 ---
 
-## 五、位置编码：解决注意力「看不到顺序」的问题
+## 五、位置編碼：解決注意力「看不到順序」的問題
 
-自注意力有一个根本性的盲区：**它对 token 的位置完全不敏感。** 打乱整个输入序列，计算出的注意力分数不变。
+自注意力有一個根本性的盲區：**它對 token 的位置完全不敏感。** 打亂整個輸入序列，計算出的注意力分數不變。
 
-但语言是有严格顺序的。「我打你」和「你打我」共享完全相同的 token 集合，含义却相反。RNN 通过串行计算自然地捕获了顺序——Transformer 的并行注意力牺牲了这一点。因此必须通过额外的机制向模型注入位置信息。
+但語言是有嚴格順序的。「我打你」和「你打我」共享完全相同的 token 集合，含義卻相反。RNN 透過序列計算自然地捕獲了順序——Transformer 的並行注意力犧牲了這一點。因此必須透過額外的機制向模型注入位置資訊。
 
-### 5.1 两种注入策略
+### 5.1 兩種注入策略
 
-**加到输入端**：将位置编码 p_i 直接加到 token embedding x_i 上——input_i = x_i + p_i。原始 Transformer 使用固定的正弦/余弦函数生成 p_i，GPT-2/3 则用可学习的 Embedding 表。
+**加到輸入端**：將位置編碼 p_i 直接加到 token embedding x_i 上——input_i = x_i + p_i。原始 Transformer 使用固定的正弦/餘弦函式生成 p_i，GPT-2/3 則用可學習的 Embedding 表。
 
-**融入注意力计算**：不修改 token 表示本身，而是根据位置对 Q 和 K 施加旋转变换。RoPE（旋转位置编码）是这一策略的代表——它将位置信息编码为 Q·K 点积中的相对位置项，天然支持比训练时更长的上下文。
+**融入注意力計算**：不修改 token 表示本身，而是根據位置對 Q 和 K 施加旋轉變換。RoPE（旋轉位置編碼）是這一策略的代表——它將位置資訊編碼為 Q·K 點積中的相對位置項，天然支援比訓練時更長的上下文。
 
-> 详见本目录的 [位置编码：从 Sinusoidal 到 RoPE](../positional_encoding/positional_encoding.md) 对 RoPE 数学原理与 NTK/YaRN 外推技术的完整推导。
+> 詳見本目錄的 [位置編碼：從 Sinusoidal 到 RoPE](../positional_encoding/positional_encoding.md) 對 RoPE 數學原理與 NTK/YaRN 外推技術的完整推導。
 
 ---
 
-## 六、层归一化与残差连接：让深网络能训练
+## 六、層歸一化與殘差連線：讓深網路能訓練
 
-自注意力和 FFN 解决了信息交换和变换的问题，但直接堆叠几十层会导致训练崩溃——早期的 Transformer 训练到 6 层以上就开始不稳定。
+自注意力和 FFN 解決了資訊交換和變換的問題，但直接堆疊幾十層會導致訓練崩潰——早期的 Transformer 訓練到 6 層以上就開始不穩定。
 
-### 6.1 问题：内部协变量漂移
+### 6.1 問題：內部協變數漂移
 
-深度网络训练中，每层参数的更新会改变该层输出的分布。这种漂移逐层累积，使得底层接收到的梯度信号变得极其不稳定。层归一化（LayerNorm）是解决这一问题的标准手段：
+深度網路訓練中，每層參數的更新會改變該層輸出的分佈。這種漂移逐層累積，使得底層接收到的梯度訊號變得極其不穩定。層歸一化（LayerNorm）是解決這一問題的標準手段：
 
 $$
 \text{LayerNorm}(x) = \gamma \cdot \frac{x - \mu}{\sqrt{\sigma^2 + \varepsilon}} + \beta
 $$
 
-其中 $\gamma$ 和 $\beta$ 是可学习的参数，$\varepsilon$ 防止除零。
+其中 $\gamma$ 和 $\beta$ 是可學習的參數，$\varepsilon$ 防止除零。
 
-### 6.2 归一化位置的演化：Post-LN → Pre-LN → RMSNorm
+### 6.2 歸一化位置的演化：Post-LN → Pre-LN → RMSNorm
 
-| 变体    | 归一化位置                     | 使用情况              | 原因                       |
+| 變體    | 歸一化位置                     | 使用情況              | 原因                       |
 | ------- | ------------------------------ | --------------------- | -------------------------- |
-| Post-LN | 残差连接之后                   | 原始 Transformer      | 训练不稳定，梯度在深层衰减 |
-| Pre-LN  | 残差连接之前（先归一化再计算） | GPT-2/3               | 训练更稳定，梯度流更通畅   |
-| RMSNorm | 同 Pre-LN，但只做缩放          | LLaMA、Qwen、DeepSeek | 速度更快，精度无明显损失   |
+| Post-LN | 殘差連線之後                   | 原始 Transformer      | 訓練不穩定，梯度在深層衰減 |
+| Pre-LN  | 殘差連線之前（先歸一化再計算） | GPT-2/3               | 訓練更穩定，梯度流更通暢   |
+| RMSNorm | 同 Pre-LN，但只做縮放          | LLaMA、Qwen、DeepSeek | 速度更快，精度無明顯損失   |
 
-RMSNorm 去掉了均值居中（μ），仅保留均方根缩放。实验证明去掉居中操作对精度影响微乎其微，但省去了一次归约计算——在大规模训练中，这个微观优化累积为可观的加速：
+RMSNorm 去掉了均值居中（μ），僅保留均方根縮放。實驗證明去掉居中操作對精度影響微乎其微，但省去了一次歸約計算——在大規模訓練中，這個微觀最佳化累積為可觀的加速：
 
 $$
 \text{RMSNorm}(x) = \gamma \cdot \frac{x}{\sqrt{\text{mean}(x^2) + \varepsilon}}
 $$
 
-### 6.3 残差连接：让梯度绕过子层
+### 6.3 殘差連線：讓梯度繞過子層
 
-有了归一化还不够。堆叠 32 层以上的网络时，梯度在反向传播中经过每一层都会衰减。残差连接提供了一个「快捷通道」——将子层的输入直接加到输出上，让梯度可以绕过子层的反向传播直达输入：
+有了歸一化還不夠。堆疊 32 層以上的網路時，梯度在反向傳播中經過每一層都會衰減。殘差連線提供了一個「快捷通道」——將子層的輸入直接加到輸出上，讓梯度可以繞過子層的反向傳播直達輸入：
 
 $$
-\text{output} = x + \text{Sublayer}(\text{LayerNorm}(x)) \qquad\text{（Pre-LN：先归一化再进子层，现代 LLM 的标准做法）}
+\text{output} = x + \text{Sublayer}(\text{LayerNorm}(x)) \qquad\text{（Pre-LN：先歸一化再進子層，現代 LLM 的標準做法）}
 $$
 
-梯度可以直接通过「+」操作跳过 Sublayer 的反向传播——这相当于给每一层都提供了一条直达输入的梯度高速公路。没有残差连接，32 层以上的 Transformer 几乎无法训练。
+梯度可以直接透過「+」操作跳過 Sublayer 的反向傳播——這相當於給每一層都提供了一條直達輸入的梯度高速公路。沒有殘差連線，32 層以上的 Transformer 幾乎無法訓練。
 
 ---
 
-## 七、完整数据流：一个 Decoder Block 的标准配方
+## 七、完整資料流：一個 Decoder Block 的標準配方
 
-将以上所有组件串接起来，以 LLaMA 为例——这是 2024 年主流开源 LLM 共同遵循的「标准配方」。交互可视化版本见 [Decoder Block 数据流可视化](transformer_block_visual.html)。
+將以上所有元件串接起來，以 LLaMA 為例——這是 2024 年主流開源 LLM 共同遵循的「標準配方」。互動視覺化版本見 [Decoder Block 資料流視覺化](transformer_block_visual.html)。
 
 ```text
-输入: token embeddings (batch, seq_len, d_model)
+輸入: token embeddings (batch, seq_len, d_model)
   │
   ├─ 1. RMSNorm ──→ 2. Self-Attention (with RoPE + Causal Mask)
   │                                          │
   │       ┌──────────────────────────────────┘
   │       ▼
-  │    3. 残差相加 (+)
+  │    3. 殘差相加 (+)
   │       │
   │       ▼
   ├─ 4. RMSNorm ──→ 5. FFN (SwiGLU)
   │                    │
   │       ┌───────────┘
   │       ▼
-  │    6. 残差相加 (+)
+  │    6. 殘差相加 (+)
   │       │
   │       ▼
-  输出 → 送入下一个 Block（重复 24-80 层，视模型规模而定）
+  輸出 → 送入下一個 Block（重複 24-80 層，視模型規模而定）
 ```
 
-**因果掩码**是 Decoder 独有的约束：生成第 t 个 token 时，模型只能看到位置 1 到 t-1，不能「偷看」未来。通过一个上三角为 -∞ 的矩阵实现：
+**因果掩碼**是 Decoder 獨有的約束：生成第 t 個 token 時，模型只能看到位置 1 到 t-1，不能「偷看」未來。透過一個上三角為 -∞ 的矩陣實現：
 
 ```text
-因果掩码（seq_len=4）：
+因果掩碼（seq_len=4）：
   [  0, -∞, -∞, -∞ ]
   [  0,  0, -∞, -∞ ]
   [  0,  0,  0, -∞ ]
@@ -228,41 +228,41 @@ $$
 
 ---
 
-## 八、权衡：Transformer 得到了什么，牺牲了什么
+## 八、權衡：Transformer 得到了什麼，犧牲了什麼
 
 ```text
-     得到                                    牺牲
+     得到                                    犧牲
   ──────────────────────                ──────────────────
-  训练完全并行化                       推理仍是自回归串行的
-  O(1) 步内跨越任意距离                 每步的注意力计算是 O(n²)
-  统一架构替代 RNN/CNN                 位置信息需额外编码（RoPE）
-  易于扩展到千亿参数                    注意力分数矩阵的峰值激活随长度平方
-                                         增长（FlashAttention 可消除）；
-                                         KV Cache 随序列长度线性增长
+  訓練完全並行化                       推理仍是自迴歸序列的
+  O(1) 步內跨越任意距離                 每步的注意力計算是 O(n²)
+  統一架構替代 RNN/CNN                 位置資訊需額外編碼（RoPE）
+  易於擴展到千億參數                    注意力分數矩陣的峰值激活隨長度平方
+                                         增長（FlashAttention 可消除）；
+                                         KV Cache 隨序列長度線性增長
 ```
 
-这些权衡驱动了 Transformer 后续 7 年的演化方向——FlashAttention 缓解了 O(n²) 的内存瓶颈，RoPE+YaRN 让 4K 训练的模型外推到 128K，MoE 在维持推理成本的同时成倍扩大参数容量。这些正是 [LLM 架构演进史](../architecture_evolution/llm_architecture_evolution.md) 所覆盖的内容。
+這些權衡驅動了 Transformer 後續 7 年的演化方向——FlashAttention 緩解了 O(n²) 的記憶體瓶頸，RoPE+YaRN 讓 4K 訓練的模型外推到 128K，MoE 在維持推理成本的同時成倍擴大參數容量。這些正是 [LLM 架構演進史](../architecture_evolution/llm_architecture_evolution.md) 所覆蓋的內容。
 
-### 8.1 关键设计决策对照
+### 8.1 關鍵設計決策對照
 
-| 决策       | 原始 Transformer (2017) | 现代 LLM (2023+) | 原因                                           |
+| 決策       | 原始 Transformer (2017) | 現代 LLM (2023+) | 原因                                           |
 | ---------- | ----------------------- | ---------------- | ---------------------------------------------- |
-| 架构       | Encoder-Decoder         | Decoder-only     | 生成任务更自然，且在足够大规模下理解与生成统一 |
-| 激活函数   | ReLU                    | SwiGLU           | 门控机制提供更好的训练动态                     |
-| 归一化位置 | Post-LN                 | Pre-LN / RMSNorm | 训练稳定性，RMSNorm 进一步节省计算             |
-| 位置编码   | Sinusoidal              | RoPE             | 编码相对位置，且支持上下文外推                 |
-| 偏置项     | 有                      | 无               | 简化模型，精度无明显损失                       |
-| 注意力头数 | 8                       | 32-64            | 细粒度匹配硬件并行度                           |
+| 架構       | Encoder-Decoder         | Decoder-only     | 生成任務更自然，且在足夠大規模下理解與生成統一 |
+| 激活函式   | ReLU                    | SwiGLU           | 門控機制提供更好的訓練動態                     |
+| 歸一化位置 | Post-LN                 | Pre-LN / RMSNorm | 訓練穩定性，RMSNorm 進一步節省計算             |
+| 位置編碼   | Sinusoidal              | RoPE             | 編碼相對位置，且支持上下文外推                 |
+| 偏置項     | 有                      | 無               | 簡化模型，精度無明顯損失                       |
+| 注意力頭數 | 8                       | 32-64            | 細粒度匹配硬體並行度                           |
 
 ---
 
-## 九、相关资源
+## 九、相關資源
 
-- [Decoder Block 数据流可视化](transformer_block_visual.html) — 本文 §7 的交互可视化，可点击组件查看详情，支持完整流/Attention/FFN 三种视角。
-- [位置编码：从 Sinusoidal 到 RoPE](../positional_encoding/positional_encoding.md) — RoPE 的数学原理与 NTK/YaRN 外推技术。
-- [LLM 架构演进史](../architecture_evolution/llm_architecture_evolution.md) — Transformer 诞生后 7 年的关键拐点与「标准配方」的形成。
-- [混合专家 (MoE)](../moe/mixture_of_experts_moe_visual_guide.zh-CN.md) — 如何用稀疏激活进一步扩展参数规模。
-- 《Attention Is All You Need》(2017) — 原始论文。
-- Jay Alammar, [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) — 经典图解教程。
-- Georgia Tech, [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) — 交互式可视化，可逐 token 观察注意力计算。
-- [bbycroft/llm](https://bbycroft.net/llm) — 3D 可视化 GPT 类模型的完整推理过程。
+- [Decoder Block 資料流視覺化](transformer_block_visual.html) — 本文 §7 的互動視覺化，可點選元件檢視詳情，支持完整流/Attention/FFN 三種視角。
+- [位置編碼：從 Sinusoidal 到 RoPE](../positional_encoding/positional_encoding.md) — RoPE 的數學原理與 NTK/YaRN 外推技術。
+- [LLM 架構演進史](../architecture_evolution/llm_architecture_evolution.md) — Transformer 誕生後 7 年的關鍵拐點與「標準配方」的形成。
+- [混合專家 (MoE)](../moe/mixture_of_experts_moe_visual_guide.zh-CN.md) — 如何用稀疏激活進一步擴展參數規模。
+- 《Attention Is All You Need》(2017) — 原始論文。
+- Jay Alammar, [The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) — 經典圖解教程。
+- Georgia Tech, [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) — 互動式視覺化，可逐 token 觀察注意力計算。
+- [bbycroft/llm](https://bbycroft.net/llm) — 3D 視覺化 GPT 類模型的完整推理過程。

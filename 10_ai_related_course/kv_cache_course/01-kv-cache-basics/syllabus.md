@@ -1,75 +1,75 @@
-# 第 1 讲：KV Cache 为什么存在 — 教学大纲
+# 第 1 講：KV Cache 為什麼存在 — 教學大綱
 
 ## 基本信息
 
-| 项目     | 内容                                                        |
+| 專案     | 內容                                                        |
 | -------- | ----------------------------------------------------------- |
-| 课时     | 120 分钟                                                    |
-| 授课对象 | 有 Python / PyTorch 基础的工程师；不要求 Transformer 注意力细节 |
-| 先修     | 矩阵乘法、PyTorch 基础；不要求 Transformer 注意力细节        |
-| 本讲定位 | 建立 token 级 KV 成本模型，为分页、复用和容量规划打底       |
+| 課時     | 120 分钟                                                    |
+| 授課物件 | 有 Python / PyTorch 基礎的工程師；不要求 Transformer 注意力細節 |
+| 先修     | 矩陣乘法、PyTorch 基礎；不要求 Transformer 注意力細節        |
+| 本講定位 | 建立 token 級 KV 成本模型，為分頁、複用和容量規劃打底       |
 
-## 教学目标
+## 教學目標
 
-- **知识目标**：理解自回归生成中 K/V 的复用条件，掌握每 token 与总 KV 的两行公式，以及注意力变体的影响。
-- **能力目标**：给定模型 config、精度、序列长度和并发，算出 KV 显存，判断权重和 KV 谁先成为瓶颈。
-- **素养目标**：报容量数字时同时说明模型、精度、序列长度和 batch。
+- **知識目標**：理解自迴歸生成中 K/V 的複用條件，掌握每 token 與總 KV 的兩行公式，以及注意力變體的影響。
+- **能力目標**：給定模型 config、精度、序列長度和併發，算出 KV 顯存，判斷權重和 KV 誰先成為瓶頸。
+- **素養目標**：報容量數字時同時說明模型、精度、序列長度和 batch。
 
-本讲使用两行公式：
+本講使用兩行公式：
 
 `per_token_bytes = 2 × b_kv × L × H_kv × D`
 
 `total_bytes = per_token_bytes × T × batch`
 
-| 符号    | 含义           | 说明                              |
+| 符號    | 含義           | 說明                              |
 | ------- | -------------- | --------------------------------- |
-| `L`     | 层数           | 每层各有一份 K/V                  |
-| `H_kv`  | KV head 数     | 不是 Q head 数；GQA/MQA 改这一项  |
-| `D`     | head 维度      | 不是 hidden size / H_q            |
-| `b_kv`  | 每元素字节     | FP16/BF16=2，FP8/INT8=1，INT4=0.5 |
-| `T`     | 每请求序列长度 | 包含 prompt 和已生成 token        |
-| `batch` | 并发请求数     | 统一写 `batch`，不用单字母 `B`    |
+| `L`     | 層數           | 每層各有一份 K/V                  |
+| `H_kv`  | KV head 數     | 不是 Q head 數；GQA/MQA 改這一項  |
+| `D`     | head 維度      | 不是 hidden size / H_q            |
+| `b_kv`  | 每元素位元組     | FP16/BF16=2，FP8/INT8=1，INT4=0.5 |
+| `T`     | 每請求序列長度 | 包含 prompt 和已生成 token        |
+| `batch` | 併發請求數     | 統一寫 `batch`，不用單字母 `B`    |
 
-`T` 是本讲的“当前总序列长度”；讲 prefill 时如果只想说 prompt 长度，写 `T_prompt`，不要和这个 `T` 混用。
+`T` 是本講的“當前總序列長度”；講 prefill 時如果只想說 prompt 長度，寫 `T_prompt`，不要和這個 `T` 混用。
 
-模型阵容：Qwen3-0.6B（`L=28`、`H_q=16`、`H_kv=8`、`D=128`）+ Qwen2.5-7B（`L=28`、`H_q=28`、`H_kv=4`、`D=128`）+ Qwen2.5-72B（`L=80`、`H_q=64`、`H_kv=8`、`D=128`）。Qwen3 没有 7B / 72B；Qwen3-0.6B 的 `head_dim` 是 128，不是 64。
+模型陣容：Qwen3-0.6B（`L=28`、`H_q=16`、`H_kv=8`、`D=128`）+ Qwen2.5-7B（`L=28`、`H_q=28`、`H_kv=4`、`D=128`）+ Qwen2.5-72B（`L=80`、`H_q=64`、`H_kv=8`、`D=128`）。Qwen3 沒有 7B / 72B；Qwen3-0.6B 的 `head_dim` 是 128，不是 64。
 
-## 时间安排
+## 時間安排
 
-| 时间   | 环节       | 内容                                                                                                                                                                            |
+| 時間   | 環節       | 內容                                                                                                                                                                            |
 | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 30 min | 概念       | 自回归循环；Q/K/V 的作用；因果掩码下历史 K/V 为什么不变；prefill 与 decode 的直觉差异；用 3-token 玩具例子手算一行注意力                                                         |
-| 45 min | 公式与演示 | KV 两行公式与符号表；对照 Qwen3-0.6B 与 Qwen2.5 的 config 逐项代入；精度表；MHA / GQA / MQA / MLA；TTFT / TPOT / 吞吐；现场运行 `code/kv_estimator.py` 演示 batch、序列长度、精度的变化 |
-| 35 min | 实验       | 5 min 安装与自检 + 30 min 填表：用 `code/kv_estimator.py` 算 Qwen3-0.6B / Qwen2.5-7B / Qwen2.5-72B 的每 token KV 与总量；72B 单独做 GPU 预算判断                                   |
-| 10 min | 答疑       | 回答公式参数、GQA/MLA、TTFT/TPOT 口径问题；预告第 2 讲                                                                                                                          |
+| 30 min | 概念       | 自迴歸迴圈；Q/K/V 的作用；因果掩碼下歷史 K/V 為什麼不變；prefill 與 decode 的直覺差異；用 3-token 玩具例子手算一行注意力                                                         |
+| 45 min | 公式與演示 | KV 兩行公式與符號表；對照 Qwen3-0.6B 與 Qwen2.5 的 config 逐項代入；精度表；MHA / GQA / MQA / MLA；TTFT / TPOT / 吞吐；現場執行 `code/kv_estimator.py` 演示 batch、序列長度、精度的變化 |
+| 35 min | 實驗       | 5 min 安裝與自檢 + 30 min 填表：用 `code/kv_estimator.py` 算 Qwen3-0.6B / Qwen2.5-7B / Qwen2.5-72B 的每 token KV 與總量；72B 單獨做 GPU 預算判斷                                   |
+| 10 min | 答疑       | 回答公式參數、GQA/MLA、TTFT/TPOT 口徑問題；預告第 2 講                                                                                                                          |
 
-## 重点与难点
+## 重點與難點
 
-| 类型 | 内容                             | 处理方式                                                                                                                    |
+| 類型 | 內容                             | 處理方式                                                                                                                    |
 | ---- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| 重点 | KV 显存公式                      | 逐参数拆解，代入真实 config 手算；强调 `H_kv` 不是 Q head 数                                                                |
-| 重点 | prefill 与 decode 的差异         | 对比矩阵形状和 arithmetic intensity；decode 说“典型小 batch、长上下文下带宽受限”，大 batch 可能 compute-bound               |
-| 难点 | MLA 为什么不是简单的 `H_kv` 变小 | 先讲 latent 压缩 + 共享 RoPE key，公式 `b_kv × L × (kv_lora_rank + qk_rope_head_dim)`，不乘 2；第 6 讲落到 GLM 的 11 层 MLA |
-| 难点 | 容量数字的口径                   | 每个数字标注模型变体、精度、序列长度、batch；权重与 KV 分开记账                                                             |
-| 难点 | 72B 的预算判断                   | 单卡 40 GiB 只算每 token KV，说明权重先爆；并发要用 8×80 GiB 或明确 TP                                                      |
+| 重點 | KV 顯存公式                      | 逐參數拆解，代入真實 config 手算；強調 `H_kv` 不是 Q head 數                                                                |
+| 重點 | prefill 與 decode 的差異         | 對比矩陣形狀和 arithmetic intensity；decode 說“典型小 batch、長上下文下頻寬受限”，大 batch 可能 compute-bound               |
+| 難點 | MLA 為什麼不是簡單的 `H_kv` 變小 | 先講 latent 壓縮 + 共享 RoPE key，公式 `b_kv × L × (kv_lora_rank + qk_rope_head_dim)`，不乘 2；第 6 講落到 GLM 的 11 層 MLA |
+| 難點 | 容量數字的口徑                   | 每個數字標註模型變體、精度、序列長度、batch；權重與 KV 分開記賬                                                             |
+| 難點 | 72B 的預算判斷                   | 單卡 40 GiB 只算每 token KV，說明權重先爆；併發要用 8×80 GiB 或明確 TP                                                      |
 
-## 本讲产出
+## 本講產出
 
-一页 KV 成本模型，至少包含：
+一頁 KV 成本模型，至少包含：
 
-- 模型与 config 来源；
-- 精度与每元素字节；
-- 每 token KV 字节；
-- 给定序列长度和并发下的总 KV；
-- 权重（按 FP16 参数估算）；
-- 与 GPU 预算的对比，以及“KV 与权重谁更大 / 是否超预算”。
+- 模型與 config 來源；
+- 精度與每元素位元組；
+- 每 token KV 位元組；
+- 給定序列長度和併發下的總 KV；
+- 權重（按 FP16 參數估算）；
+- 與 GPU 預算的對比，以及“KV 與權重誰更大 / 是否超預算”。
 
-## 参考材料
+## 參考材料
 
-- [第 1 讲实验脚本](code/kv_estimator.py)
-- [AI-fundamentals KV Cache 技术体系](../../../09_inference_system/kv_cache/README.md)
+- [第 1 講實驗指令碼](code/kv_estimator.py)
+- [AI-fundamentals KV Cache 技術體系](../../../09_inference_system/kv_cache/README.md)
 - [KV Cache 基本概念](../../../09_inference_system/kv_cache/01_concepts/01_basic/)
 - `~/Project/study/ai-infra-course/06-kvcache-optimization/code/calculate_qwen3_memory.py`
 - `~/Project/study/ai-infra-course/06-kvcache-optimization/visuals/kv-cache-formula.html`
 
-参考计算器的 Qwen3-0.6B 预设默认把 `head_dim` 当成 64，会算出 56 KiB；本讲以 `head_dim=128`、112 KiB 为准，对答案时先核对 `num_key_value_heads`、`head_dim` 和精度。
+參考計算器的 Qwen3-0.6B 預設預設把 `head_dim` 當成 64，會算出 56 KiB；本講以 `head_dim=128`、112 KiB 為準，對答案時先核對 `num_key_value_heads`、`head_dim` 和精度。

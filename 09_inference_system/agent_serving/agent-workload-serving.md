@@ -1,209 +1,209 @@
-# 当 Agent 流量成为推理系统的主要负载
+# 當 Agent 流量成為推理系統的主要負載
 
-> 过去推理系统服务的是「人打字」：请求短、无状态、分钟级会话。Agent 把这件事倒了过来：一次任务由程序连续发起 10–20 次调用，token 耗用是普通对话的 5–30 倍（Gartner 预测口径）。当主要流量从人变成 Agent，推理系统赖以设计的一组隐含假设逐条失效。
+> 過去推理系統服務的是「人打字」：請求短、無狀態、分鐘級會話。Agent 把這件事倒了過來：一次任務由程式連續發起 10–20 次呼叫，token 耗用是普通對話的 5–30 倍（Gartner 預測口徑）。當主要流量從人變成 Agent，推理系統賴以設計的一組隱含假設逐條失效。
 >
-> 2026-09 | 基于 vLLM（`43d691ec6b`，2026-08-07）与 SGLang（`f7101b0ae6`，2026-08-18）源码验证；vLLM Router 部分转引本仓库 [router.md](../vllm/routing/router.md)（Router 仓库未本地核验，已标注）
+> 2026-09 | 基於 vLLM（`43d691ec6b`，2026-08-07）與 SGLang（`f7101b0ae6`，2026-08-18）原始碼驗證；vLLM Router 部分轉引本倉庫 [router.md](../vllm/routing/router.md)（Router 倉庫未本地核驗，已標註）
 >
-> **性质说明**：机制与行为均经源码验证；涉及成本/耗时的数字为量级示意，用于建立直觉，落地前需按自有硬件实测；外部文献数据按原文口径转引。
+> **性質說明**：機制與行為均經原始碼驗證；涉及成本/耗時的數字為量級示意，用於建立直覺，落地前需按自有硬體實測；外部文獻資料按原文口徑轉引。
 
 ---
 
-## 一、负载在换人：Agent 流量长什么样
+## 一、負載在換人：Agent 流量長什麼樣
 
-Chat 时代，推理系统对负载有一组很少被写下来的隐含假设。它们如此自然，以至于散落在所有调度、缓存代码的默认行为里：
+Chat 時代，推理系統對負載有一組很少被寫下來的隱含假設。它們如此自然，以至於散落在所有排程、快取程式碼的預設行為裡：
 
-| 隐含假设                   | Chat 负载的现实                  | Agent 负载的现实                                                      |
+| 隱含假設                   | Chat 負載的現實                  | Agent 負載的現實                                                      |
 | -------------------------- | -------------------------------- | --------------------------------------------------------------------- |
-| 请求相互独立、无状态       | 每条消息独立到达，无跨请求约束   | 一次任务 = 有状态的调用序列，每轮都要带上全部历史                     |
-| KV 生命周期 = 请求生命周期 | 请求结束，KV 即可释放            | 会话存活贯穿数十次调用，中间夹着工具执行的「空窗」                    |
-| 上下文短且形态稳定         | 几百到几千 token，系统提示词为主 | 上下文单调增长，工具结果（网页、代码、日志）大量涌入                  |
-| 容量按并发数规划           | QPS × 平均时长，前缀命中率稳定   | 命中率随任务类型剧烈波动，重试与并行分支放大流量                      |
-| 输出吞吐 = 产能            | TPOT 与输出 tok/s 就是产能口径   | 输入输出比极端偏斜，decode 产出只占处理量零头，产能口径要换成总处理量 |
+| 請求相互獨立、無狀態       | 每條訊息獨立到達，無跨請求約束   | 一次任務 = 有狀態的呼叫序列，每輪都要帶上全部歷史                     |
+| KV 生命周期 = 請求生命週期 | 請求結束，KV 即可釋放            | 會話存活貫穿數十次呼叫，中間夾著工具執行的「空窗」                    |
+| 上下文短且形態穩定         | 几百到几千 token，系統提示詞為主 | 上下文單調增長，工具結果（網頁、程式碼、日志）大量湧入                  |
+| 容量按併發數規劃           | QPS × 平均時長，字首命中率穩定   | 命中率隨任務類型劇烈波動，重試與並行分支放大流量                      |
+| 輸出吞吐 = 產能            | TPOT 與輸出 tok/s 就是產能口徑   | 輸入輸出比極端偏斜，decode 產出只佔處理量零頭，產能口徑要換成總處理量 |
 
-数据侧，这个趋势已经可以量化：Agent 完成一件事要调用模型 10–20 次，token 耗用是普通对话的 5–30 倍（Gartner 预测，转引自 [Token Factory 素材 05](../../99_misc/token_factory_talk/references/05-jevons-demand-future.md)）；HF Hub 的 Agent 流量监测显示，2026 年 4 月仅 Claude Code 一类编码 Agent 就占流量的 67.8%，7 月降至 44.4%，份额下降不是 Agent 退潮，而是十多个新客户端涌现带来的生态分化【素材 08】。驱动力已经从「人」切换到「机器」。
+資料側，這個趨勢已經可以量化：Agent 完成一件事要呼叫模型 10–20 次，token 耗用是普通對話的 5–30 倍（Gartner 預測，轉引自 [Token Factory 素材 05](../../99_misc/token_factory_talk/references/05-jevons-demand-future.md)）；HF Hub 的 Agent 流量監測顯示，2026 年 4 月僅 Claude Code 一類編碼 Agent 就占流量的 67.8%，7 月降至 44.4%，份額下降不是 Agent 退潮，而是十多個新客戶端湧現帶來的生態分化【素材 08】。驅動力已經從「人」切換到「機器」。
 
-微观形态上，AgentSysBench 对 10 个代表性 Agent 应用、6 万余次模型调用与 11 万余次工具调用的测量给出了第一份系统画像（[From LLM Inference to Agentic Workloads](https://arxiv.org/abs/2608.15127)，2026-08）：会话中位活跃计算时间仅 20%，其余时间「活着但空闲」；空闲期导致的 KV 重算（re-prefill）占 cache 相关 token 的 55.9%、总成本的 31.5%；工具定义与系统指令等控制面元数据最高占上下文窗口的 84.3%；长短请求混批时，队头阻塞可使快请求减速 7.1–35.7 倍、小请求 TPOT 恶化至 +79.7%。这些数字把第二节要展开的四个连锁问题，从推测变成了实测。
+微觀形態上，AgentSysBench 對 10 個代表性 Agent 應用、6 萬餘次模型呼叫與 11 萬餘次工具呼叫的測量給出了第一份系統畫像（[From LLM Inference to Agentic Workloads](https://arxiv.org/abs/2608.15127)，2026-08）：會話中位活躍計算時間僅 20%，其餘時間「活著但空閒」；空閒期導致的 KV 重算（re-prefill）占 cache 相關 token 的 55.9%、總成本的 31.5%；工具定義與系統指令等控制面後設資料最高占上下文視窗的 84.3%；長短請求混批時，隊頭阻塞可使快請求減速 7.1–35.7 倍、小請求 TPOT 惡化至 +79.7%。這些數字把第二節要展開的四個連鎖問題，從推測變成了實測。
 
-Agent 流量不是把 Chat 流量「放大」，而是把它变形。下面挑四个最关键的连锁问题逐一拆（第五个假设「产能口径失效」放到 §5 度量收尾），每一个都能在源码里找到引擎的应对，以及应对不了的部分。
-
----
-
-## 二、四个被打破的假设，四个连锁问题
-
-### 2.1 KV 生命周期错配：逐出还是保留，从偶发变成常态
-
-Agent 会话的存活时间远长于单次请求。两轮调用之间，系统要做一个 Chat 时代几乎不存在的决定：
-
-- **逐出**：下轮 turn 到来时重算整条轨迹。一个累积了 50K token 历史的 Agent 会话，若 KV 已被逐出，resume 时的 prefill 需要重读全部历史：按单卡 10–20K tok/s 的 prefill 量级估算，就是一次 2.5–5 秒的 TTFT 尖刺（量级示意，按硬件实测为准）。对一个每轮都在等待工具返回的交互式 Agent，这个尖刺出现在每一轮。这份估算还偏保守：prefill 是可并行的，开了上下文并行的部署里纯计算部分会随并行度明显缩短；而 miss 轮的 TTFT 由「计算 + 排队」构成，负载越高排队的占比越大。尖刺的第一杠杆在调度与准入（见 3.2），堆卡帮助有限。
-- **保留**：空闲会话的 KV 持续占用显存。并发会话数一多，「看不见的会话」吃掉的显存比活跃请求还多，挤压的是正在 decode 的 batch。
-
-Agent 会话的 KV 命中率直接决定 TTFT 形态：Chat 场景下 prefix cache miss 的代价是几百毫秒，Agent 场景下是数秒。
-
-### 2.2 调度语义失真：队列里混着两种完全不同的东西
-
-Agent 流量进入队列后，调度器看到的是两类请求的混合体：
-
-1. **活跃请求**：正在 prefill/decode，对 TTFT/TPOT 敏感；
-2. **休眠会话**：工具执行中，下一轮几秒到几分钟后才回来；但它的 KV 若还占着显存，就在持续支付「租金」。
-
-更麻烦的是重试带来的长 prefill 冲击：一次 50K token 的重试 prefill，足以让同 batch 的所有 decode 请求的 TPOT 抖动一个量级。Chat 时代靠 chunked prefill 缓解的问题，在 Agent 时代被放大，因为 Agent 的 prefill 特别长，重试又频繁。而且这种干扰不均匀：被长 prefill 撞上的步直接落进长尾分位，p50 几乎不动，SLO 往往先被 ITL 尾部击穿，均值还看着正常。
-
-### 2.3 路由的粘性需求：会话要「记住」实例
-
-多实例部署下，Agent 会话的第 N 轮请求若被路由到一个没见过它的实例，前缀缓存全部失效，2.1 的 TTFT 尖刺直接兑现。Chat 时代负载均衡追求「均匀」，Agent 时代要追求「亲和」，而这两个目标在容量紧张时互相冲突。
-
-### 2.4 容量规划失真：QPS 公式失效
-
-Chat 容量公式：`并发数 = QPS × 平均请求时长`。Agent 场景下，决定显存的不只是并发请求，还有并发会话数 × 会话 KV 增长速率 × 命中率。命中率取决于任务类型组合：一批编码 Agent 和一批客服 Agent 的 KV 增长曲线完全不同，按平均数规划的容量会在任务类型切换时震荡。还有两个形态：会话占空比（活跃请求与会话数之比）由会话的串行属性决定，不随规模改善；容量耗尽的表现是准入悬崖而非平滑退化，队列打满再叠加突发长 prefill，新会话会被直接拒绝。
+Agent 流量不是把 Chat 流量「放大」，而是把它變形。下面挑四個最關鍵的連鎖問題逐一拆（第五個假設「產能口徑失效」放到 §5 度量收尾），每一個都能在原始碼裡找到引擎的應對，以及應對不了的部分。
 
 ---
 
-## 三、引擎现状：四个问题，源码里已有什么答案
+## 二、四個被打破的假設，四個連鎖問題
 
-以下均基于 vLLM `43d691ec6b`、SGLang `f7101b0ae6` 源码验证。
+### 2.1 KV 生命週期錯配：逐出還是保留，從偶發變成常態
 
-### 3.1 KV 生命周期：radix tree + 分层存储（SGLang 走得最远）
+Agent 會話的存活時間遠長於單次請求。兩輪呼叫之間，系統要做一個 Chat 時代幾乎不存在的決定：
 
-SGLang 的 RadixCache 是会话复用的核心载体：
+- **逐出**：下輪 turn 到來時重算整條軌跡。一個累積了 50K token 历史的 Agent 會話，若 KV 已被逐出，resume 時的 prefill 需要重讀全部歷史：按單卡 10–20K tok/s 的 prefill 量級估算，就是一次 2.5–5 秒的 TTFT 尖刺（量級示意，按硬體實測為準）。對一個每輪都在等待工具返回的互動式 Agent，這個尖刺出現在每一輪。這份估算還偏保守：prefill 是可並行的，開了上下文並行的部署裡純計算部分會隨並行度明顯縮短；而 miss 輪的 TTFT 由「計算 + 排隊」構成，負載越高排隊的佔比越大。尖刺的第一槓杆在排程與准入（見 3.2），堆卡幫助有限。
+- **保留**：空閒會話的 KV 持續佔用顯存。併發會話數一多，「看不見的會話」吃掉的顯存比活躍請求還多，擠壓的是正在 decode 的 batch。
 
-- `match_prefix`（`python/sglang/srt/mem_cache/radix_cache.py:376`）按前缀树匹配历史 KV；
-- `inc_lock_ref` / `dec_lock_ref`（`radix_cache.py:622`、`radix_cache.py:637`）通过引用计数把「正在使用」的子树排除在逐出之外（`evictable_size_` 相应增减）；
-- 逐出按 LRU（`last_access_time`，`radix_cache.py:248`）执行 `evict`（`radix_cache.py:592`）。
+Agent 會話的 KV 命中率直接決定 TTFT 形態：Chat 場景下 prefix cache miss 的代價是幾百毫秒，Agent 場景下是數秒。
 
-这套机制对 Agent 负载的含义：只要下一轮请求的 prompt 前缀还在树里、没有被逐出，resume 就是「免费」的。但 radix tree 默认只活在一个进程的显存里：重启即失，多实例间不共享。
+### 2.2 排程語義失真：佇列裡混著兩種完全不同的東西
 
-分层缓存把「会话记忆」扩展到显存之外：`--enable-hierarchical-cache`（`python/sglang/srt/server_args.py:2668`，默认关闭）启用 HiCache 后，L1（GPU）逐出的 KV 写回 L2（CPU）/L3（远程存储），下轮命中 L2 的恢复代价远低于重算（架构细节见 [HiCache 深入详解](../sglang/hicache_deep_dive.md)）。Agent 负载下，HiCache 应当作会话记忆层来配置，而不是可开可关的调优项。
+Agent 流量進入佇列後，排程器看到的是兩類請求的混合體：
 
-vLLM 侧：prefix caching 在 V1 已默认开启（`vllm/config/cache.py:93`，`enable_prefix_caching: bool = True`），复用依据是块级前缀哈希：`get_computed_blocks`（`vllm/v1/core/kv_cache_manager.py:229`）调用 `find_longest_cache_hit`（`kv_cache_manager.py:261`）定位最长命中，请求结束由 `free`（`kv_cache_manager.py:567`）归还块，同前缀的后续请求仍可命中未被覆盖的块。但 vLLM 没有「为某会话保留 KV」的租约/TTL 原语：命中是统计性的，显存压力下 Agent 会话的历史块随时可能被新请求覆盖。
+1. **活躍請求**：正在 prefill/decode，對 TTFT/TPOT 敏感；
+2. **休眠會話**：工具執行中，下一輪幾秒到幾分鐘後才回來；但它的 KV 若還佔著顯存，就在持續支付「租金」。
 
-### 3.2 调度：请求级优先级已有，会话语义没有
+更麻煩的是重試帶來的長 prefill 衝擊：一次 50K token 的重試 prefill，足以讓同 batch 的所有 decode 請求的 TPOT 抖動一個量級。Chat 時代靠 chunked prefill 緩解的問題，在 Agent 時代被放大，因為 Agent 的 prefill 特別長，重試又頻繁。而且這種干擾不均勻：被長 prefill 撞上的步直接落進長尾分位，p50 幾乎不動，SLO 往往先被 ITL 尾部擊穿，均值還看著正常。
 
-先纠正一个常见印象：两个引擎都已具备请求级优先级。
+### 2.3 路由的粘性需求：會話要「記住」實例
+
+多實例部署下，Agent 會話的第 N 輪請求若被路由到一個沒見過它的實例，字首快取全部失效，2.1 的 TTFT 尖刺直接兌現。Chat 時代負載均衡追求「均勻」，Agent 時代要追求「親和」，而這兩個目標在容量緊張時互相沖突。
+
+### 2.4 容量規劃失真：QPS 公式失效
+
+Chat 容量公式：`併發數 = QPS × 平均請求時長`。Agent 場景下，決定顯存的不只是併發請求，還有併發會話數 × 會話 KV 增長速率 × 命中率。命中率取決於任務類型組合：一批編碼 Agent 和一批客服 Agent 的 KV 增長曲線完全不同，按平均數規劃的容量會在任務類型切換時震盪。還有兩個形態：會話佔空比（活躍請求與會話數之比）由會話的序列屬性決定，不隨規模改善；容量耗盡的表現是准入懸崖而非平滑退化，佇列打滿再疊加突發長 prefill，新會話會被直接拒絕。
+
+---
+
+## 三、引擎現狀：四個問題，原始碼裡已有什麼答案
+
+以下均基於 vLLM `43d691ec6b`、SGLang `f7101b0ae6` 原始碼驗證。
+
+### 3.1 KV 生命周期：radix tree + 分層儲存（SGLang 走得最遠）
+
+SGLang 的 RadixCache 是會話複用的核心載體：
+
+- `match_prefix`（`python/sglang/srt/mem_cache/radix_cache.py:376`）按字首樹匹配歷史 KV；
+- `inc_lock_ref` / `dec_lock_ref`（`radix_cache.py:622`、`radix_cache.py:637`）透過引用計數把「正在使用」的子樹排除在逐出之外（`evictable_size_` 相應增減）；
+- 逐出按 LRU（`last_access_time`，`radix_cache.py:248`）執行 `evict`（`radix_cache.py:592`）。
+
+這套機制對 Agent 負載的含義：只要下一輪請求的 prompt 字首還在樹裡、沒有被逐出，resume 就是「免費」的。但 radix tree 預設只活在一個行程的顯存裡：重啟即失，多實例間不共享。
+
+分層快取把「會話記憶」擴展到顯存之外：`--enable-hierarchical-cache`（`python/sglang/srt/server_args.py:2668`，預設關閉）啟用 HiCache 后，L1（GPU）逐出的 KV 寫回 L2（CPU）/L3（遠端儲存），下輪命中 L2 的恢復代價遠低於重算（架構細節見 [HiCache 深入詳解](../sglang/hicache_deep_dive.md)）。Agent 負載下，HiCache 應當作會話記憶層來配置，而不是可開可關的調優項。
+
+vLLM 側：prefix caching 在 V1 已預設開啟（`vllm/config/cache.py:93`，`enable_prefix_caching: bool = True`），複用依據是塊級字首雜湊：`get_computed_blocks`（`vllm/v1/core/kv_cache_manager.py:229`）呼叫 `find_longest_cache_hit`（`kv_cache_manager.py:261`）定位最長命中，請求結束由 `free`（`kv_cache_manager.py:567`）歸還塊，同字首的後續請求仍可命中未被覆蓋的塊。但 vLLM 沒有「為某會話保留 KV」的租約/TTL 原語：命中是統計性的，顯存壓力下 Agent 會話的歷史塊隨時可能被新請求覆蓋。
+
+### 3.2 排程：請求級優先順序已有，會話語義沒有
+
+先糾正一個常見印象：兩個引擎都已具備請求級優先順序。
 
 SGLang：
 
-- 调度策略可选 `lpm / random / fcfs / dfs-weight / lof / priority / routing-key`（`server_args.py:828-846`），默认 `fcfs`；对前缀复用最友好的 `lpm`（最长前缀优先）需要显式开启；
-- `--enable-priority-scheduling` 开启后按请求 priority 字段调度，且此时 `schedule_policy` 必须是 `fcfs` 或 `lof`（`server_args.py:9246-9249`）；
-- 显存不足时 `retract_decode`（`python/sglang/srt/managers/schedule_batch.py:2816`）逐个收回 decode 请求直至内存可容纳，若仍不够，则中止最后一个请求而不是让调度器崩溃；收回顺序由 `_get_decode_retraction_order`（`schedule_batch.py:2869` 起）决定，默认保留「已生成最少输出、输入最长」的请求，`retraction_policy=priority` 时优先保护高优先级请求；
-- `schedule_conservativeness`（`server_args.py:886`，默认 1.0）是防频繁 retract 的调节阀，调大即更保守地准入。
+- 排程策略可選 `lpm / random / fcfs / dfs-weight / lof / priority / routing-key`（`server_args.py:828-846`），預設 `fcfs`；對字首複用最友好的 `lpm`（最長字首優先）需要顯式開啟；
+- `--enable-priority-scheduling` 開啟後按請求 priority 欄位排程，且此時 `schedule_policy` 必須是 `fcfs` 或 `lof`（`server_args.py:9246-9249`）；
+- 顯存不足時 `retract_decode`（`python/sglang/srt/managers/schedule_batch.py:2816`）逐個收回 decode 請求直至記憶體可容納，若仍不夠，則中止最後一個請求而不是讓排程器崩潰；收回順序由 `_get_decode_retraction_order`（`schedule_batch.py:2869` 起）決定，預設保留「已生成最少輸出、輸入最長」的請求，`retraction_policy=priority` 時優先保護高優先順序請求；
+- `schedule_conservativeness`（`server_args.py:886`，預設 1.0）是防頻繁 retract 的調節閥，調大即更保守地准入。
 
-vLLM V1：抢占受害者按 `(priority, arrival_time)` 最小者选中（`vllm/v1/core/sched/scheduler.py:592-594`），被抢占请求重新入队等待重算。
+vLLM V1：搶佔受害者按 `(priority, arrival_time)` 最小者選中（`vllm/v1/core/sched/scheduler.py:592-594`），被搶佔請求重新入隊等待重算。
 
-缺的是什么：以上所有原语都以「请求」为单位。没有任何机制回答「这个请求属于哪个会话」「这个会话已经花了多少预算」「这批互为分支的请求应该同进同退」。引擎外围已出现会话语义的雏形：NVIDIA Dynamo 的 KV 路由支持 priority/latency 两类 agentic hints，让用户面 turn 插队后台任务；llm-d 的 Endpoint Picker 正在社区推进 session-affinity 路由（[issue #177](https://github.com/llm-d/llm-d-inference-payload-processor/issues/177)）。但它们都是网关层的「拼接」，vLLM/SGLang 内核里仍没有会话原语。这条裂缝有多宽，从学术界的反应可见一斑：Autellix 把 agent 程序整体作为一等公民重新调度（同等延迟下吞吐 4–15×），Helium 从数据系统视角重做 workflow-aware serving。调度层被整体重造，说明参数调优弥合不了。
+缺的是什麼：以上所有原語都以「請求」為單位。沒有任何機制回答「這個請求屬於哪個會話」「這個會話已經花了多少預算」「這批互為分支的請求應該同進同退」。引擎外圍已出現會話語義的雛形：NVIDIA Dynamo 的 KV 路由支持 priority/latency 兩類 agentic hints，讓使用者面 turn 插隊後台任務；llm-d 的 Endpoint Picker 正在社群推進 session-affinity 路由（[issue #177](https://github.com/llm-d/llm-d-inference-payload-processor/issues/177)）。但它們都是閘道器層的「拼接」，vLLM/SGLang 核心裡仍沒有會話原語。這條裂縫有多寬，從學術界的反應可見一斑：Autellix 把 agent 程式整體作為一等公民重新排程（同等延遲下吞吐 4–15×），Helium 從資料系統視角重做 workflow-aware serving。排程層被整體重造，說明參數調優彌合不了。
 
-### 3.3 路由：前缀感知已有，会话粘性靠应用层
+### 3.3 路由：字首感知已有，會話粘性靠應用層
 
-vLLM Router 的 `cache_aware` 策略在每个 worker 侧维护近似 radix 树追踪已缓存前缀，按匹配率路由（匹配率阈值 `cache_threshold=0.5`，缓存条目 30 秒周期清理；机制详解见 [vLLM Router 架构解析](../vllm/routing/router.md)，Router 为独立 Rust 项目，本文未对源码本地核验）。
+vLLM Router 的 `cache_aware` 策略在每個 worker 側維護近似 radix 樹追蹤已快取字首，按匹配率路由（匹配率閾值 `cache_threshold=0.5`，快取條目 30 秒周期清理；機制詳解見 [vLLM Router 架構解析](../vllm/routing/router.md)，Router 為獨立 Rust 專案，本文未對原始碼本地核驗）。
 
-对 Agent 负载的启示与缺口：
+對 Agent 負載的啟示與缺口：
 
-- `cache_aware` 解决的是**前缀维度的亲和**：系统提示词、工具 schema 这类稳定前缀收益最大；
-- **会话维度的粘性**（同一会话的 N 轮请求尽量落同一实例）没有内建：radix 树追踪的是「哪些前缀在哪个节点上」，不是「哪个会话属于哪个节点」。生产路由层的现状是「有意识、无标准」：Dynamo 维护跨 worker 的 KV block 全局索引（Flash Indexer），llm-d 的 EPP 把 session-affinity 路由列为社区议题，但都未成为跨引擎的通用机制。实践中仍靠应用层网关按 session id 做一致性哈希，或接受外置 KV 层来解耦（见 4.3）；
-- 多引擎混合部署时，路由层无法感知 LMCache/Mooncake 里的 KV 分布，KV 感知路由目前停留在各自体系内（分布式 KV 层见 [LMCache 架构概览](../kv_cache/02_systems/01_lmcache/01_lmcache_overview.md)、[Mooncake 架构详解](../kv_cache/02_systems/04_mooncake/01_mooncake_architecture.md)）。
+- `cache_aware` 解決的是**字首維度的親和**：系統提示詞、工具 schema 這類穩定字首收益最大；
+- **會話維度的粘性**（同一會話的 N 輪請求儘量落同一實例）沒有內建：radix 樹追蹤的是「哪些字首在哪個節點上」，不是「哪個會話屬於哪個節點」。生產路由層的現狀是「有意識、無標準」：Dynamo 維護跨 worker 的 KV block 全局索引（Flash Indexer），llm-d 的 EPP 把 session-affinity 路由列為社群議題，但都未成為跨引擎的通用機制。實踐中仍靠應用層閘道器按 session id 做一致性哈希，或接受外置 KV 層來解耦（見 4.3）；
+- 多引擎混合部署時，路由層無法感知 LMCache/Mooncake 里的 KV 分布，KV 感知路由目前停留在各自體系內（分布式 KV 層見 [LMCache 架構概覽](../kv_cache/02_systems/01_lmcache/01_lmcache_overview.md)、[Mooncake 架構詳解](../kv_cache/02_systems/04_mooncake/01_mooncake_architecture.md)）。
 
-### 3.4 容量：把规划公式从 QPS 换成会话三要素
+### 3.4 容量：把規劃公式從 QPS 換成會話三要素
 
-容量公式的迁移：
+容量公式的遷移：
 
 ```text
-Chat：  并发请求数 ≈ QPS × 平均请求时长
-Agent： 并发会话成本 ≈ Σ (活跃请求数 × 请求 KV)
-        + Σ (休眠会话数 × 会话 KV × 保留概率)
-        + Σ (每轮新增 token × (1 − 会话命中率) 的重算峰值)
+Chat：  併發請求數 ≈ QPS × 平均請求時長
+Agent： 併發會話成本 ≈ Σ (活躍請求數 × 請求 KV)
+        + Σ (休眠會話數 × 會話 KV × 保留概率)
+        + Σ (每輪新增 token × (1 − 會話命中率) 的重算峰值)
 ```
 
-方法论层面的支撑已经齐备：KV 容量推演的框架见 [GLM-5 KV Cache 容量规划](../kv_cache/01_concepts/10_capacity_planning/03_glm5_kv_cache_capacity_planning.md)，服务产能与承诺的 Goodput 框架见 [Token 工厂的产能怎么算？](../../99_misc/token_factory_talk/cluster-capacity-measurement.md)。新的工作是把 Goodput 的「成功」从请求级改成 turn 级：一个工具调用失败重试 3 次的 turn，Goodput 该怎么记？现有框架没有答案。
+方法論層面的支撐已經齊備：KV 容量推演的框架見 [GLM-5 KV Cache 容量規劃](../kv_cache/01_concepts/10_capacity_planning/03_glm5_kv_cache_capacity_planning.md)，服務產能與承諾的 Goodput 框架見 [Token 工廠的產能怎麼算？](../../99_misc/token_factory_talk/cluster-capacity-measurement.md)。新的工作是把 Goodput 的「成功」從請求級改成 turn 級：一個工具呼叫失敗重試 3 次的 turn，Goodput 該怎麼記？現有框架沒有答案。
 
 ---
 
-## 四、三个没有标准答案的权衡
+## 四、三個沒有標準答案的權衡
 
 ### 4.1 粘性 vs 均衡
 
-亲和路由提升命中率，但把同类会话压到同一实例，制造热点与长尾。vLLM Router 用 `cache_threshold`（0.5）画了一条线：匹配率过线才按亲和路由，否则回落到负载均衡，本质上是承认亲和是概率性的、均衡是兜底的。Agent 流量下这条线的位置需要按任务类型重调：编码 Agent 的会话内前缀增长率高，过线请求复用价值大；而系统提示同质化的客服 Agent，任何实例命中率都高，亲和的边际价值低。亲和的紧迫性还取决于外置缓存层的容量：配了足量 DRAM 层、write_through 策略的 HiCache，能把跨实例命中率托在高位，在相当大的规模区间内实质替代会话亲和路由。先看外置层配了多少，再决定要不要做亲和。
+親和路由提升命中率，但把同類會話壓到同一實例，製造熱點與長尾。vLLM Router 用 `cache_threshold`（0.5）畫了一條線：匹配率過線才按親和路由，否則回落到負載均衡，本質上是承認親和是機率性的、均衡是兜底的。Agent 流量下這條線的位置需要按任務類型重調：編碼 Agent 的會話內字首增長率高，過線請求複用價值大；而系統提示同質化的客服 Agent，任何實例命中率都高，親和的邊際價值低。親和的緊迫性還取決於外接快取層的容量：配了足量 DRAM 層、write_through 策略的 HiCache，能把跨實例命中率託在高位，在相當大的規模區間內實質替代會話親和路由。先看外接層配了多少，再決定要不要做親和。
 
 ### 4.2 保留 vs 重算
 
-直觉上的成本模型（量级示意）：
+直覺上的成本模型（量級示意）：
 
 ```text
-保留成本 = 会话 KV 字节 × 保留时长 × 单位显存租金
-重算成本 = 历史 token 数 / prefill 吞吐 × 等待时间价值
+保留成本 = 會話 KV 位元組 × 保留時長 × 單位顯存租金
+重算成本 = 历史 token 數 / prefill 吞吐 × 等待時間價值
 ```
 
-变量是保留时长。Agent 会话的工具间隔（秒到分钟）恰好落在「显存租金不可忽略、重算又不便宜」的区间。新架构把天平进一步推向重算：CSA 把 KV 压到 1/4，KDA 干脆不产生 token 级 KV（见 [01-post-kv-cache-era.md](../kv_cache/07_kv_compression/05-post-kv-cache-era.md)），重算成本在快速通缩。今天按 H100+MHA 口径设计的粘性/外置 KV 方案，换到新架构模型上可能突然不划算。会话基础设施的设计要把「重算变便宜」当作一阶趋势来对冲。
+變數是保留時長。Agent 會話的工具間隔（秒到分钟）恰好落在「顯存租金不可忽略、重算又不便宜」的區間。新架構把天平進一步推向重算：CSA 把 KV 壓到 1/4，KDA 乾脆不產生 token 級 KV（見 [01-post-kv-cache-era.md](../kv_cache/07_kv_compression/05-post-kv-cache-era.md)），重算成本在快速通縮。今天按 H100+MHA 口徑設計的粘性/外置 KV 方案，換到新架構模型上可能突然不划算。會話基礎設施的設計要把「重算變便宜」當作一階趨勢來對沖。
 
-### 4.3 会话状态放哪：三层选型
+### 4.3 會話狀態放哪：三層選型
 
-| 层               | 代表                                                                                                                | 优势                                                          | 代价                                       |
+| 層               | 代表                                                                                                                | 優勢                                                          | 代價                                       |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------ |
-| 引擎内 radix     | SGLang RadixCache、vLLM prefix hash                                                                                 | 零额外跳数，命中即免 prefill                                  | 与进程共生：重启即失、多实例不共享、无 TTL |
-| 外置 KV 存储     | LMCache（L2/L3）、Mooncake                                                                                          | 跨实例/跨引擎共享，会话记忆持久；足量配置时可实质替代会话亲和 | 恢复走网络/盘，多一跳运维复杂度            |
-| 应用层上下文重组 | 压缩/摘要（[Claude Code 上下文压缩](../../08_agentic_system/context/claude-code-context-compression.md)）、状态外化 | 把「存」的问题换给「算」，引擎零改造                          | 摘要有信息损失，重组本身是一次 prefill     |
+| 引擎內 radix     | SGLang RadixCache、vLLM prefix hash                                                                                 | 零額外跳數，命中即免 prefill                                  | 與行程共生：重啟即失、多實例不共享、無 TTL |
+| 外置 KV 儲存     | LMCache（L2/L3）、Mooncake                                                                                          | 跨實例/跨引擎共享，會話記憶持久；足量配置時可實質替代會話親和 | 恢復走網路/盤，多一跳運維複雜度            |
+| 應用層上下文重組 | 壓縮/摘要（[Claude Code 上下文壓縮](../../08_agentic_system/context/claude-code-context-compression.md)）、狀態外化 | 把「存」的問題換給「算」，引擎零改造                          | 摘要有資訊損失，重組本身是一次 prefill     |
 
-选型不是单选，多数生产系统是「引擎内 radix 保热点 + 外置存储保长尾 + 应用层压缩控总量」的三明治。要避免的是默认态：什么都不配，每轮 resume 都交全额重算税。
-
----
-
-## 五、怎么度量：三个 Agent 形态指标与缺口清单
-
-现有 benchmark（`benchmark_serving`、`sglang bench`）的流量形态是 Chat 的：独立请求、稳定前缀。Agent 负载需要自己的度量：
-
-1. Turn-resume TTFT：同一会话上一轮结束后 T 秒（模拟工具执行）发起来轮请求，测 TTFT 分布。它同时暴露逐出策略与分层缓存的实效，Chat TTFT 测不出这些。
-2. 会话 KV 命中率：按会话聚合的 prefix cache 命中 token 占比，随任务类型/会话长度分布，而不是集群平均值。
-3. 每任务 token 成本：含重试与分支放大的、按「任务」而非「请求」聚合的 token 消耗，容量规划与成本归因都该以它为单位。
-
-度量口径本身也要换：Agent 负载 prefill 主导，decode 产出只占处理量的零头，拿「输出吞吐」横评引擎没有意义，应以总 token 处理量 + TTFT/ITL 分位为主口径。工具链层面另有一个坑：按完成事件切片导出的利用率会系统性低估全窗负载，做 Agent 负载的全窗分析要用请求秒守恒或时间加权指标。
-
-缺口清单（截至 2026-09，按源码现状）：
-
-- 引擎无会话原语：session id → 亲和/配额/分组抢占的映射，只能应用层拼；
-- KV 无租约/TTL：「保留多久」没有声明式接口，逐出策略对所有流量一视同仁；
-- KV 感知路由不跨引擎、不跨存储层（Router 只见引擎、LMCache 只见自己）；
-- Agent 形态 benchmark 标准化刚起步：MLCommons 已于 2026-07 启动 [MLPerf Agentic Inference](https://mlcommons.org/2026/07/agentic-inference-for-mlperf-inference/)（多轮、上下文持续增长、闭环工作流），学术界已有 AgentSysBench 这样的负载画像工具，但 turn-resume TTFT、会话 KV 命中率尚不在任何标准测法中。
-
-实测待办（本文数字均未实测，为量级示意）：同一 20 轮工具调用 trace（每轮间隔 5–30 s），分别在「radix 开/关」「HiCache 开/关」下测 turn-resume TTFT 与每任务 token 成本。这一步做完，本文才能从机制分析变成容量依据。
+選型不是單選，多數生產系統是「引擎內 radix 保熱點 + 外接儲存保長尾 + 應用層壓縮控總量」的三明治。要避免的是預設態：什麼都不配，每輪 resume 都交全額重算稅。
 
 ---
 
-## 结语
+## 五、怎麼度量：三個 Agent 形態指標與缺口清單
 
-Chat 时代推理系统的一等公民是请求，Agent 时代要换成会话。请求级的机制引擎已备齐：优先级、抢占、前缀复用、分层逐出都有源码级的答案；会话级的原语（粘性、租约、分组、turn 级度量）还全部空缺，应用层网关与 KV 存储层因此在 2026 年拥挤起来。给基础设施团队的建议：把 Agent 平台接上推理集群之前，先决定会话状态放在三层中的哪一层。这个决定做错，后面的调度与容量优化都在为它还债。
+現有 benchmark（`benchmark_serving`、`sglang bench`）的流量形態是 Chat 的：獨立請求、穩定字首。Agent 負載需要自己的度量：
+
+1. Turn-resume TTFT：同一會話上一輪結束後 T 秒（模擬工具執行）發起來輪請求，測 TTFT 分布。它同時暴露逐出策略與分層快取的實效，Chat TTFT 測不出這些。
+2. 會話 KV 命中率：按會話聚合的 prefix cache 命中 token 占比，隨任務類型/會話長度分佈，而不是叢集平均值。
+3. 每任務 token 成本：含重試與分支放大的、按「任務」而非「請求」聚合的 token 消耗，容量規劃與成本歸因都該以它為單位。
+
+度量口徑本身也要換：Agent 負載 prefill 主導，decode 產出只佔處理量的零頭，拿「輸出吞吐」橫評引擎沒有意義，應以總 token 處理量 + TTFT/ITL 分位為主口徑。工具鏈層面另有一個坑：按完成事件切片匯出的利用率會系統性低估全窗負載，做 Agent 負載的全窗分析要用請求秒守恆或時間加權指標。
+
+缺口清單（截至 2026-09，按原始碼現狀）：
+
+- 引擎無會話原語：session id → 親和/配額/分組搶佔的對映，只能應用層拼；
+- KV 無租約/TTL：「保留多久」沒有宣告式介面，逐出策略對所有流量一視同仁；
+- KV 感知路由不跨引擎、不跨儲存層（Router 只見引擎、LMCache 只見自己）；
+- Agent 形態 benchmark 標準化剛起步：MLCommons 已於 2026-07 啟動 [MLPerf Agentic Inference](https://mlcommons.org/2026/07/agentic-inference-for-mlperf-inference/)（多輪、上下文持續增長、閉環工作流），學術界已有 AgentSysBench 這樣的負載畫像工具，但 turn-resume TTFT、會話 KV 命中率尚不在任何標準測法中。
+
+實測待辦（本文數字均未實測，為量級示意）：同一 20 輪工具呼叫 trace（每輪間隔 5–30 s），分別在「radix 開/關」「HiCache 開/關」下測 turn-resume TTFT 與每任務 token 成本。這一步做完，本文才能從機制分析變成容量依據。
 
 ---
 
-## 参考资料
+## 結語
 
-1. **负载画像与系统研究**
-   - Chaokun Chang et al., [From LLM Inference to Agentic Workloads](https://arxiv.org/abs/2608.15127), arXiv 2608.15127, 2026-08——本文第一节量化数据来源（AgentSysBench：会话中位活跃计算时间 20%、re-prefill 占 cache 相关 token 55.9%、元数据占上下文最高 84.3%）
-   - [Autellix: An Efficient Serving Engine for LLM Agents as General Programs](https://arxiv.org/abs/2502.13965), arXiv 2502.13965, 2025（NSDI'26 发表）——程序级调度，同等延迟下吞吐 4–15×
+Chat 時代推理系統的一等公民是請求，Agent 時代要換成會話。請求級的機制引擎已備齊：優先順序、搶佔、字首複用、分層逐出都有原始碼級的答案；會話級的原語（粘性、租約、分組、turn 級度量）還全部空缺，應用層閘道器與 KV 儲存層因此在 2026 年擁擠起來。給基礎設施團隊的建議：把 Agent 平台接上推理叢集之前，先決定會話狀態放在三層中的哪一層。這個決定做錯，後面的排程與容量最佳化都在為它還債。
+
+---
+
+## 參考資料
+
+1. **負載畫像與系統研究**
+   - Chaokun Chang et al., [From LLM Inference to Agentic Workloads](https://arxiv.org/abs/2608.15127), arXiv 2608.15127, 2026-08——本文第一節量化資料來源（AgentSysBench：會話中位活躍計算時間 20%、re-prefill 占 cache 相關 token 55.9%、後設資料占上下文最高 84.3%）
+   - [Autellix: An Efficient Serving Engine for LLM Agents as General Programs](https://arxiv.org/abs/2502.13965), arXiv 2502.13965, 2025（NSDI'26 发表）——程式級排程，同等延遲下吞吐 4–15×
    - [Helium: Efficient LLM Serving for Agentic Workflows — A Data Systems Perspective](https://dl.acm.org/doi/10.1145/3802046), ACM——workflow-aware serving
-   - [Cost-Efficient Large Language Model Serving for Multi-turn Conversations with CachedAttention](https://www.usenix.org/conference/atc24/presentation/gao-bin-cost), USENIX ATC'24——多轮会话 KV 分层复用的先导工作（原 AttentionStore）
+   - [Cost-Efficient Large Language Model Serving for Multi-turn Conversations with CachedAttention](https://www.usenix.org/conference/atc24/presentation/gao-bin-cost), USENIX ATC'24——多輪會話 KV 分層複用的先導工作（原 AttentionStore）
 
-2. **生产系统与路由**
-   - NVIDIA, [Full-Stack Optimizations for Agentic Inference with NVIDIA Dynamo](https://developer.nvidia.com/blog/full-stack-optimizations-for-agentic-inference-with-nvidia-dynamo/)——KV block 全局索引（Flash Indexer）与 agentic hints
-   - llm-d, [Agentic Serving Well-Lit Path](https://llm-d.ai/docs/0.8/well-lit-paths/workloads/agentic-serving) 与 [KV Cache Management](https://llm-d.ai/docs/architecture/advanced/kv-management)；session-affinity 路由进展见 [issue #177](https://github.com/llm-d/llm-d-inference-payload-processor/issues/177)
+2. **生產系統與路由**
+   - NVIDIA, [Full-Stack Optimizations for Agentic Inference with NVIDIA Dynamo](https://developer.nvidia.com/blog/full-stack-optimizations-for-agentic-inference-with-nvidia-dynamo/)——KV block 全局索引（Flash Indexer）與 agentic hints
+   - llm-d, [Agentic Serving Well-Lit Path](https://llm-d.ai/docs/0.8/well-lit-paths/workloads/agentic-serving) 與 [KV Cache Management](https://llm-d.ai/docs/architecture/advanced/kv-management)；session-affinity 路由進展見 [issue #177](https://github.com/llm-d/llm-d-inference-payload-processor/issues/177)
    - Red Hat, [Master KV cache aware routing with llm-d for efficient AI inference](https://developers.redhat.com/articles/2025/10/07/master-kv-cache-aware-routing-llm-d-efficient-ai-inference), 2025-10
-   - [DualMap: Enabling Both Cache Affinity and Load Balancing](https://arxiv.org/html/2602.06502v1), arXiv 2602.06502——4.1 节「粘性 vs 均衡」的学术跟进
+   - [DualMap: Enabling Both Cache Affinity and Load Balancing](https://arxiv.org/html/2602.06502v1), arXiv 2602.06502——4.1 節「粘性 vs 均衡」的學術跟進
 
 3. **Benchmark**
-   - MLCommons, [Agentic Inference for MLPerf Inference](https://mlcommons.org/2026/07/agentic-inference-for-mlperf-inference/), 2026-07——多轮、上下文持续增长、闭环工作流的基准标准化
+   - MLCommons, [Agentic Inference for MLPerf Inference](https://mlcommons.org/2026/07/agentic-inference-for-mlperf-inference/), 2026-07——多輪、上下文持續增長、閉環工作流的基準標準化
 
-延伸阅读：LLM 系统演进「请求 → 会话 → 轨迹」的三段叙事，见 [LLMSys PaperList](https://github.com/AmberLJC/LLMSys-PaperList/)。
+延伸閱讀：LLM 系統演進「請求 → 會話 → 軌跡」的三段敘事，見 [LLMSys PaperList](https://github.com/AmberLJC/LLMSys-PaperList/)。
 
 ---
 
 ## 源文件索引
 
-| 文件                                            | 关键符号                                                                                                               | 本文引用点                                             |
+| 文件                                            | 關鍵符號                                                                                                               | 本文引用點                                             |
 | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `python/sglang/srt/mem_cache/radix_cache.py`    | `match_prefix`、`inc_lock_ref`/`dec_lock_ref`、`evict`、`last_access_time`                                             | 前缀匹配与引用计数保护（:376、:622、:637、:592、:248） |
-| `python/sglang/srt/managers/schedule_batch.py`  | `retract_decode`、`_get_decode_retraction_order`                                                                       | 显存不足时的收回顺序与最后请求中止（:2816、:2869）     |
-| `python/sglang/srt/managers/schedule_policy.py` | `PrefillAdder`、`rem_chunk_tokens`、`budget_state`                                                                     | 准入预算（:504、:512-538、:664、:834）                 |
-| `python/sglang/srt/managers/scheduler.py`       | `get_next_batch_to_run`、`event_loop_normal/overlap`                                                                   | 调度主循环（:3015、:1719、:1754）                      |
-| `python/sglang/srt/server_args.py`              | `schedule_policy`（默认 fcfs）、`enable_priority_scheduling`、`schedule_conservativeness`、`enable_hierarchical_cache` | 策略选项与默认值（:828-846、:886、:2668）              |
-| `vllm/v1/core/sched/scheduler.py`               | `schedule`、抢占受害者选择                                                                                             | 按 (priority, arrival_time) 抢占（:440、:592-594）     |
-| `vllm/v1/core/kv_cache_manager.py`              | `get_computed_blocks`、`find_longest_cache_hit`、`free`                                                                | 前缀命中与块归还（:229、:261、:567）                   |
-| `vllm/config/cache.py`                          | `enable_prefix_caching`                                                                                                | V1 默认开启（:93）                                     |
+| `python/sglang/srt/mem_cache/radix_cache.py`    | `match_prefix`、`inc_lock_ref`/`dec_lock_ref`、`evict`、`last_access_time`                                             | 字首匹配與引用計數保護（:376、:622、:637、:592、:248） |
+| `python/sglang/srt/managers/schedule_batch.py`  | `retract_decode`、`_get_decode_retraction_order`                                                                       | 顯存不足時的收回順序與最後請求中止（:2816、:2869）     |
+| `python/sglang/srt/managers/schedule_policy.py` | `PrefillAdder`、`rem_chunk_tokens`、`budget_state`                                                                     | 准入預算（:504、:512-538、:664、:834）                 |
+| `python/sglang/srt/managers/scheduler.py`       | `get_next_batch_to_run`、`event_loop_normal/overlap`                                                                   | 排程主迴圈（:3015、:1719、:1754）                      |
+| `python/sglang/srt/server_args.py`              | `schedule_policy`（預設 fcfs）、`enable_priority_scheduling`、`schedule_conservativeness`、`enable_hierarchical_cache` | 策略選項與預設值（:828-846、:886、:2668）              |
+| `vllm/v1/core/sched/scheduler.py`               | `schedule`、搶佔受害者選擇                                                                                             | 按 (priority, arrival_time) 搶佔（:440、:592-594）     |
+| `vllm/v1/core/kv_cache_manager.py`              | `get_computed_blocks`、`find_longest_cache_hit`、`free`                                                                | 字首命中與塊歸還（:229、:261、:567）                   |
+| `vllm/config/cache.py`                          | `enable_prefix_caching`                                                                                                | V1 預設開啟（:93）                                     |
 
-_版本：vLLM `43d691ec6b`（2026-08-07）、SGLang `f7101b0ae6`（2026-08-18）。文中未标注实测的耗时/成本数字均为量级示意。_
+_版本：vLLM `43d691ec6b`（2026-08-07）、SGLang `f7101b0ae6`（2026-08-18）。文中未標註實測的耗時/成本數字均為量級示意。_

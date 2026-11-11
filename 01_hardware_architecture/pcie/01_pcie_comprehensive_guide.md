@@ -1,135 +1,135 @@
-# PCIe 总线技术大全
+# PCIe 匯流排技術大全
 
-> 本文基于 [Felix 的 PCIe 扫盲系列博文](http://blog.chinaaet.com/justlxy/p/5100053251) 及维基百科内容整理而成，旨在为读者提供一份从 PCI 到 PCIe 的全面技术指南。
+> 本文基於 [Felix 的 PCIe 掃盲系列博文](http://blog.chinaaet.com/justlxy/p/5100053251) 及維基百科內容整理而成，旨在為讀者提供一份從 PCI 到 PCIe 的全面技術指南。
 
 ---
 
-## 1. 前言：PCIe 简介
+## 1. 前言：PCIe 簡介
 
-本章将简要介绍 PCIe 的起源、核心优势以及从 Gen1 到 Gen7 的技术演进路线，帮助读者建立对 PCIe 技术的宏观认识。
+本章將簡要介紹 PCIe 的起源、核心優勢以及從 Gen1 到 Gen7 的技術演進路線，幫助讀者建立對 PCIe 技術的宏觀認識。
 
-### 1.1 什么是 PCIe
+### 1.1 什麼是 PCIe
 
-**PCI Express (Peripheral Component Interconnect Express)**，简称 **PCIe** 或 **PCI-E**，是继 ISA 和 PCI 总线之后的第三代 I/O 总线标准（3GIO）。它由 Intel 在 2001 年的 IDF 上提出，并由 PCI-SIG 组织发布。
+**PCI Express (Peripheral Component Interconnect Express)**，簡稱 **PCIe** 或 **PCI-E**，是繼 ISA 和 PCI 匯流排之後的第三代 I/O 匯流排標準（3GIO）。它由 Intel 在 2001 年的 IDF 上提出，並由 PCI-SIG 組織釋出。
 
-目前 PCIe 已经发展到 Gen5、Gen6 甚至更高版本，但其核心架构依然保持向后兼容。
+目前 PCIe 已經發展到 Gen5、Gen6 甚至更高版本，但其核心架構依然保持向後相容。
 
-### 1.2 PCIe 的核心优势
+### 1.2 PCIe 的核心優勢
 
-PCIe 的主要优势在于：
+PCIe 的主要優勢在於：
 
-- **高速率**：提供极高的数据传输带宽。
-- **点对点传输**：取代了 PCI 的共享总线架构。
-- **串行传输**：抗干扰能力强，传输距离远，信号完整性更好。
-- **低功耗**：支持先进的电源管理。
-- **软件兼容性**：在软件层面上完全兼容 PCI/PCI-X 设备。
+- **高速率**：提供極高的資料傳輸頻寬。
+- **點對點傳輸**：取代了 PCI 的共享匯流排架構。
+- **序列傳輸**：抗干擾能力強，傳輸距離遠，訊號完整性更好。
+- **低功耗**：支援先進的電源管理。
+- **軟體相容性**：在軟體層面上完全相容 PCI/PCI-X 裝置。
 
-### 1.3 PCIe 版本演进与性能对比
+### 1.3 PCIe 版本演進與效能對比
 
-PCIe 规范由 PCI-SIG 组织维护，大约每 3-4 年更新一代，带宽通常翻倍。以下是各版本的关键参数对比：
+PCIe 規範由 PCI-SIG 組織維護，大約每 3-4 年更新一代，頻寬通常翻倍。以下是各版本的關鍵參數對比：
 
-| 版本    | 发布年份 | 传输速率 (GT/s) | 编码方式      | x1 带宽 (GB/s) | x16 带宽 (GB/s) | 备注                        |
+| 版本    | 发布年份 | 傳輸速率 (GT/s) | 編碼方式      | x1 頻寬 (GB/s) | x16 頻寬 (GB/s) | 備註                        |
 | :------ | :------- | :-------------- | :------------ | :------------- | :-------------- | :-------------------------- |
 | **1.0** | 2003     | 2.5             | 8b/10b        | 0.25           | 4.0             | 初始版本                    |
 | **2.0** | 2007     | 5.0             | 8b/10b        | 0.50           | 8.0             | 速率翻倍                    |
-| **3.0** | 2010     | 8.0             | 128b/130b     | 0.985          | 15.75           | 编码效率提升至 98.5%        |
-| **4.0** | 2017     | 16.0            | 128b/130b     | 1.969          | 31.51           | 保持 128b/130b 编码         |
-| **5.0** | 2019     | 32.0            | 128b/130b     | 3.938          | 63.02           | 面向高性能计算和 AI         |
-| **6.0** | 2022     | 64.0            | PAM-4 (1b/1b) | 7.56           | 121.0           | 引入 PAM-4 调制和 FLIT 模式（规范 2022 年 1 月定稿） |
-| **7.0** | 2025     | 128.0           | PAM-4         | 15.13          | 242.0           | 正式发布，带宽再次翻倍      |
+| **3.0** | 2010     | 8.0             | 128b/130b     | 0.985          | 15.75           | 編碼效率提升至 98.5%        |
+| **4.0** | 2017     | 16.0            | 128b/130b     | 1.969          | 31.51           | 保持 128b/130b 編碼         |
+| **5.0** | 2019     | 32.0            | 128b/130b     | 3.938          | 63.02           | 面向高效能運算和 AI         |
+| **6.0** | 2022     | 64.0            | PAM-4 (1b/1b) | 7.56           | 121.0           | 引入 PAM-4 調製和 FLIT 模式（規範 2022 年 1 月定稿） |
+| **7.0** | 2025     | 128.0           | PAM-4         | 15.13          | 242.0           | 正式发布，頻寬再次翻倍      |
 
 > **注**：
 >
-> 1. **GT/s (Giga Transfers per second)**：表示每秒传输的次数。每 lane 带宽 (GB/s) = 传输速率 (GT/s) × 编码效率 ÷ 8；x16 总带宽再 × 16。
-> 2. **编码/开销**：
->    - Gen1/Gen2 使用 8b/10b 编码，效率为 80%。
->    - Gen3-Gen5 使用 128b/130b 编码，效率约为 98.5%（128/130）；表中 1.969/31.51 等已按此折算。
->    - Gen6+ 改用 PAM-4 调制 + FLIT (Flow Control Unit) + FEC：开销源变为 FEC 与协议开销（约 5-6%），不再是 128b/130b 编码——表中 7.56/15.13 为扣除后口径。
+> 1. **GT/s (Giga Transfers per second)**：表示每秒傳輸的次數。每 lane 頻寬 (GB/s) = 傳輸速率 (GT/s) × 編碼效率 ÷ 8；x16 總頻寬再 × 16。
+> 2. **編碼/開銷**：
+>    - Gen1/Gen2 使用 8b/10b 編碼，效率為 80%。
+>    - Gen3-Gen5 使用 128b/130b 編碼，效率約為 98.5%（128/130）；表中 1.969/31.51 等已按此折算。
+>    - Gen6+ 改用 PAM-4 調製 + FLIT (Flow Control Unit) + FEC：開銷源變為 FEC 與協議開銷（約 5-6%），不再是 128b/130b 編碼——表中 7.56/15.13 為扣除後口徑。
 
 ---
 
-## 2. PCI 总线回顾
+## 2. PCI 匯流排回顧
 
-在深入 PCIe 之前，了解 PCI 总线的基础对于理解 PCIe 的演进至关重要。
+在深入 PCIe 之前，了解 PCI 匯流排的基礎對於理解 PCIe 的演進至關重要。
 
 ### 2.1 基本概念
 
-**PCI (Peripheral Component Interconnect)** 是一种局部并行总线标准。
+**PCI (Peripheral Component Interconnect)** 是一種區域性並行匯流排標準。
 
-- **结构**：树型结构，独立于 CPU 总线。
-- **主从设备**：PCI 总线上只允许有一个主设备（Initiator）拥有总线控制权，其他为从设备（Target）。
-- **仲裁**：通过仲裁器（Arbiter）管理总线使用权，使用 `REQ#` 和 `GNT#` 信号。
+- **結構**：樹型結構，獨立於 CPU 匯流排。
+- **主從裝置**：PCI 匯流排上只允許有一個主裝置（Initiator）擁有匯流排控制權，其他為從裝置（Target）。
+- **仲裁**：透過仲裁器（Arbiter）管理匯流排使用權，使用 `REQ#` 和 `GNT#` 訊號。
 
-### 2.2 典型的 PCI 总线周期
+### 2.2 典型的 PCI 匯流排週期
 
-PCI 总线是**地址和数据复用**的（AD 信号线）。所有信号与时钟同步。
-一个典型的数据读取周期包括：
+PCI 匯流排是**地址和資料複用**的（AD 訊號線）。所有訊號與時鐘同步。
+一個典型的資料讀取週期包括：
 
-1. **Arbitration**：主设备申请并获得总线使用权。
-2. **Address Phase**：`FRAME#` 拉低，主设备发送地址和命令。
-3. **Data Phase**：`IRDY#`（主设备就绪）和 `TRDY#`（从设备就绪）同时有效时，传输数据。
-4. **Turn-around**：总线控制权交接时的三态周期。
-5. **Termination**：传输结束，信号恢复空闲。
+1. **Arbitration**：主裝置申請並獲得匯流排使用權。
+2. **Address Phase**：`FRAME#` 拉低，主裝置傳送地址和命令。
+3. **Data Phase**：`IRDY#`（主裝置就緒）和 `TRDY#`（從裝置就緒）同時有效時，傳輸資料。
+4. **Turn-around**：匯流排控制權交接時的三態週期。
+5. **Termination**：傳輸結束，訊號恢復空閒。
 
-### 2.3 Reflected-Wave Signaling (反射波信号)
+### 2.3 Reflected-Wave Signaling (反射波訊號)
 
-PCI 总线（33MHz）利用**反射波信号**技术来降低功耗。
+PCI 匯流排（33MHz）利用**反射波訊號**技術來降低功耗。
 
-- **原理**：发送端的驱动能力较弱（只能驱动一半电平），依靠信号在传输线末端的反射波与入射波叠加，达到逻辑电平要求。
-- **限制**：要求总线长度和负载严格受限。随着频率提高（如 66MHz），反射机制成为瓶颈，限制了总线上可挂载的设备数量（66MHz 下通常只能挂载 1-2 个插槽）。
+- **原理**：傳送端的驅動能力較弱（只能驅動一半電平），依靠訊號在傳輸線末端的反射波與入射波疊加，達到邏輯電平要求。
+- **限制**：要求匯流排長度和負載嚴格受限。隨著頻率提高（如 66MHz），反射機制成為瓶頸，限制了匯流排上可掛載的裝置數量（66MHz 下通常只能掛載 1-2 個插槽）。
 
-### 2.4 三种传输模式
+### 2.4 三種傳輸模式
 
-1. **Programmed I/O (PIO)**：CPU 直接参与数据搬运，效率低，占用 CPU 资源。
-2. **DMA (Direct Memory Access)**：由 DMA 控制器完成内存与外设间的数据传输，无需 CPU 干预，效率高。
-3. **Peer-to-Peer**：两个 PCI 设备之间直接通信（一个作为主设备，一个作为从设备），无需通过内存中转。
+1. **Programmed I/O (PIO)**：CPU 直接參與資料搬運，效率低，占用 CPU 資源。
+2. **DMA (Direct Memory Access)**：由 DMA 控制器完成記憶體與外設間的資料傳輸，無需 CPU 干預，效率高。
+3. **Peer-to-Peer**：兩個 PCI 裝置之間直接通訊（一個作為主裝置，一個作為從裝置），無需透過記憶體中轉。
 
-### 2.5 中断与错误处理
+### 2.5 中斷與錯誤處理
 
-- **中断信号**：PCI 使用 `INTA#`, `INTB#`, `INTC#`, `INTD#` 四根边带信号（Sideband Signals）进行中断请求。这些信号是电平触发的，且可以共享（线与）。
-- **中断路由**：系统中通常通过中断路由表（Interrupt Routing Table）将 PCI 插槽的中断映射到中断控制器的 IRQ 引脚。
+- **中斷訊號**：PCI 使用 `INTA#`, `INTB#`, `INTC#`, `INTD#` 四根邊帶訊號（Sideband Signals）進行中斷請求。這些訊號是電平觸發的，且可以共享（線與）。
+- **中斷路由**：系統中通常透過中斷路由表（Interrupt Routing Table）將 PCI 插槽的中斷對映到中斷控制器的 IRQ 引腳。
 
-### 2.6 地址空间分配
+### 2.6 地址空間分配
 
-PCI 支持三种地址空间：
+PCI 支援三種地址空間：
 
-1. **Memory Space**：内存地址空间（32位或64位）。
-2. **I/O Space**：I/O 地址空间（x86 下限制为 64KB，已逐渐废弃）。
-3. **Configuration Space**：配置空间。每个功能（Function）有 256 字节的配置空间。
-   - 访问方式：x86 通过 `0xCF8` (地址端口) 和 `0xCFC` (数据端口) 间接访问。
+1. **Memory Space**：記憶體地址空間（32位或64位）。
+2. **I/O Space**：I/O 地址空間（x86 下限制為 64KB，已逐漸廢棄）。
+3. **Configuration Space**：配置空間。每個功能（Function）有 256 位元組的配置空間。
+   - 訪問方式：x86 透過 `0xCF8` (地址端口) 和 `0xCFC` (資料埠) 間接訪問。
 
-### 2.7 66MHz 瓶颈与 PCI-X
+### 2.7 66MHz 瓶頸與 PCI-X
 
-为了提高带宽，PCI 升级到了 66MHz/64-bit。但由于反射波信号机制和非寄存器输入（Non-registered Input）的时序限制，66MHz 已接近并行 PCI 总线的物理极限。
+為了提高頻寬，PCI 升級到了 66MHz/64-bit。但由於反射波訊號機制和非暫存器輸入（Non-registered Input）的時序限制，66MHz 已接近並行 PCI 匯流排的物理極限。
 
 **PCI-X (PCI eXtended)**：
 
-- **Registered Input**：引入寄存器输入，放宽时序要求，频率提升至 133MHz。
-- **Split Transaction (分割事务)**：解决从设备响应慢导致的等待问题。当从设备无法立即响应时，会通知主设备释放总线，待数据准备好后再重新申请总线，从而显著提高总线利用率。
-- **DDR/QDR**：在 PCI-X 2.0 中引入双倍/四倍数据速率。
-- 尽管性能提升，但并行总线的串扰、布线难度和引脚数量问题依然存在，最终被串行的 PCIe 取代。
+- **Registered Input**：引入暫存器輸入，放寬時序要求，頻率提升至 133MHz。
+- **Split Transaction (分割事務)**：解決從裝置響應慢導致的等待問題。當從裝置無法立即響應時，會通知主裝置釋放匯流排，待資料準備好後再重新申請匯流排，從而顯著提高匯流排利用率。
+- **DDR/QDR**：在 PCI-X 2.0 中引入雙倍/四倍資料速率。
+- 儘管效能提升，但並行匯流排的串擾、佈線難度和引腳數量問題依然存在，最終被序列的 PCIe 取代。
 
 ---
 
-## 3. PCIe 总线基础
+## 3. PCIe 匯流排基礎
 
-本章将重点介绍 PCIe 的核心架构设计，包括其分层体系结构、点对点拓扑结构以及在软件层面如何保持与传统 PCI 的兼容性。
+本章將重點介紹 PCIe 的核心架構設計，包括其分層體系結構、點對點拓撲結構以及在軟體層面如何保持與傳統 PCI 的兼容性。
 
 ### 3.1 基本概念
 
-PCIe 采用**高速串行点对点**连接。
+PCIe 采用**高速序列點對點**連線。
 
-- **Link & Lane**：两个设备之间的连接称为 Link。Link 由 1 到 32 个 Lane 组成（x1, x2, x4, x8, x16, x32）。
-- **差分信号**：每个 Lane 包含两对差分线（一对发送 TX，一对接收 RX），实现全双工通信。
-- **嵌入式时钟**：接收端从数据流中恢复时钟（8b/10b 或 128b/130b 编码），无需独立时钟线。
-- **拓扑结构**：
-  - **Root Complex (RC)**：PCIe 树状结构的根节点，集成在 CPU 或北桥中。它负责 CPU/内存子系统与 PCIe 设备之间的事务生成与转换。
-  - **Switch (交换机)**：具有一个上游端口 (Upstream Port) 和多个下游端口 (Downstream Port)。它提供了扇出能力，并在内部支持点对点的数据包转发（类似于网络交换机）。
-  - **Endpoint (EP)**：拓扑结构的末端设备（如 NVMe SSD、显卡）。
-    - **Legacy Endpoint**：支持 IO 事务，兼容旧式 PCI 操作。
-    - **Native Endpoint**：仅支持 Memory 映射，通过 MSI/MSI-X 中断，性能更优。
+- **Link & Lane**：兩個裝置之間的連線稱為 Link。Link 由 1 到 32 個 Lane 組成（x1, x2, x4, x8, x16, x32）。
+- **差分訊號**：每個 Lane 包含兩對差分線（一對傳送 TX，一對接收 RX），實現全雙工通訊。
+- **嵌入式時鐘**：接收端從資料流中恢復時鐘（8b/10b 或 128b/130b 編碼），無需獨立時鐘線。
+- **拓撲結構**：
+  - **Root Complex (RC)**：PCIe 樹狀結構的根節點，集成在 CPU 或北橋中。它負責 CPU/記憶體子系統與 PCIe 裝置之間的事務生成與轉換。
+  - **Switch (交換機)**：具有一個上游埠 (Upstream Port) 和多個下游埠 (Downstream Port)。它提供了扇出能力，並在內部支援點對點的資料包轉發（類似於網路交換機）。
+  - **Endpoint (EP)**：拓撲結構的末端裝置（如 NVMe SSD、顯示卡）。
+    - **Legacy Endpoint**：支持 IO 事務，相容舊式 PCI 操作。
+    - **Native Endpoint**：僅支援 Memory 映射，透過 MSI/MSI-X 中斷，效能更優。
 
-为了更直观地理解，下图展示了一个典型的 PCIe 树状拓扑结构：
+為了更直觀地理解，下圖展示了一個典型的 PCIe 樹狀拓撲結構：
 
 ```mermaid
 graph TD
@@ -170,157 +170,157 @@ graph TD
     class SW_UP,SW_Logic,SW_DP1,SW_DP2 switch;
 ```
 
-### 3.2 软件兼容性
+### 3.2 軟體相容性
 
-PCIe 在硬件物理层上与 PCI 完全不同，但在**软件层**上保持兼容。
+PCIe 在硬體物理層上與 PCI 完全不同，但在**軟體層**上保持兼容。
 
-- PCIe 保留了 PCI 的配置空间定义（Header Type 0/1）。
-- 操作系统依然可以通过枚举 PCI 总线的方式发现和配置 PCIe 设备，无需修改驱动模型。
-- PCIe 扩展了配置空间至 4KB（前 256 字节与 PCI 兼容）。
+- PCIe 保留了 PCI 的配置空間定義（Header Type 0/1）。
+- 作業系統依然可以透過列舉 PCI 匯流排的方式發現和配置 PCIe 裝置，無需修改驅動模型。
+- PCIe 擴展了配置空間至 4KB（前 256 位元組與 PCI 兼容）。
 
-### 3.3 体系结构概览
+### 3.3 體系結構概覽
 
-PCIe 采用分层结构：
+PCIe 採用分層結構：
 
-1. **应用层 (Software/Application Layer)**：处理用户请求。
-2. **事务层 (Transaction Layer)**：生成和解析 TLP (Transaction Layer Packet)，负责 QoS、流控、排序。
-3. **数据链路层 (Data Link Layer)**：生成和解析 DLLP，负责数据完整性（CRC）、ACK/NAK 重传机制。
-4. **物理层 (Physical Layer)**：负责链路训练、编解码（8b/10b）、串行化/解串、差分驱动。
+1. **應用層 (Software/Application Layer)**：處理使用者請求。
+2. **事務層 (Transaction Layer)**：生成和解析 TLP (Transaction Layer Packet)，負責 QoS、流控、排序。
+3. **資料鏈路層 (Data Link Layer)**：生成和解析 DLLP，負責資料完整性（CRC）、ACK/NAK 重傳機制。
+4. **物理層 (Physical Layer)**：負責鏈路訓練、編解碼（8b/10b）、串行化/解串、差分驅動。
 
 ---
 
-## 4. PCIe 事务层 (Transaction Layer)
+## 4. PCIe 事務層 (Transaction Layer)
 
-事务层是 PCIe 体系结构的核心，负责 TLP 包的构建与处理。
+事務層是 PCIe 體系結構的核心，負責 TLP 包的構建與處理。
 
-### 4.1 通信机制 (Request & Completion)
+### 4.1 通訊機制 (Request & Completion)
 
-PCIe 通信基于**请求（Request）**和**完成（Completion）**模型。所有事务均由 Requester 发起，Completer 响应（如果需要）。
+PCIe 通訊基於**請求（Request）**和**完成（Completion）**模型。所有事務均由 Requester 发起，Completer 響應（如果需要）。
 
-- **Requester**：发起请求的设备（如 RC 读取 EP 数据）。
-- **Completer**：响应请求的设备（如 EP 返回数据给 RC）。
+- **Requester**：發起請求的裝置（如 RC 讀取 EP 資料）。
+- **Completer**：響應請求的裝置（如 EP 返回資料給 RC）。
 
-### 4.2 TLP 类型与 Posted/Non-Posted
+### 4.2 TLP 類型與 Posted/Non-Posted
 
-根据是否需要对方返回响应，PCIe 事务分为两类：
+根據是否需要對方返回響應，PCIe 事務分為兩類：
 
-1. **Non-Posted Transaction (非派发事务)**：
-   - Requester 发送请求后，**必须**等待 Completer 返回 Completion 包。
-   - 典型类型：**Memory Read**, **I/O Read/Write**, **Configuration Read/Write**。
-   - 目的：确保数据已正确读取或写入（对于 I/O 和 Config 写入，需要确认完成以保证时序）。
+1. **Non-Posted Transaction (非派發事務)**：
+   - Requester 傳送請求後，**必須**等待 Completer 返回 Completion 包。
+   - 典型類型：**Memory Read**, **I/O Read/Write**, **Configuration Read/Write**。
+   - 目的：確保資料已正確讀取或寫入（對於 I/O 和 Config 寫入，需要確認完成以保證時序）。
 
-2. **Posted Transaction (派发事务)**：
-   - Requester 发送请求后，**不需要**等待 Completion 包，类似于“发射后不管”。
-   - 典型类型：**Memory Write**, **Message**。
-   - 优势：极大提高了总线效率，避免了写操作的等待延迟。
+2. **Posted Transaction (派發事務)**：
+   - Requester 傳送請求後，**不需要**等待 Completion 包，類似於“发射后不管”。
+   - 典型類型：**Memory Write**, **Message**。
+   - 優勢：極大提高了匯流排效率，避免了寫操作的等待延遲。
 
-### 4.3 TLP 包结构
+### 4.3 TLP 包結構
 
-一个 TLP 包主要由 Header、Data Payload 和 ECRC 组成：
+一個 TLP 包主要由 Header、Data Payload 和 ECRC 組成：
 
-- **Header (包头)**：长度为 3 DW (12字节) 或 4 DW (16字节)。
-  - **Fmt (Format)**：指定 TLP 长度（3DW/4DW）及是否包含数据。
-  - **Type**：指定事务类型（Memory, I/O, Cfg, Msg）。
-  - **Length**：数据载荷长度（以 DW 为单位，最大 1024 DW 即 4KB）。
-  - **Requester ID**：由 Bus Number (8b) + Device Number (5b) + Function Number (3b) 组成，用于路由响应。
+- **Header (包頭)**：長度為 3 DW (12位元組) 或 4 DW (16位元組)。
+  - **Fmt (Format)**：指定 TLP 長度（3DW/4DW）及是否包含資料。
+  - **Type**：指定事務類型（Memory, I/O, Cfg, Msg）。
+  - **Length**：資料載荷長度（以 DW 為單位，最大 1024 DW 即 4KB）。
+  - **Requester ID**：由 Bus Number (8b) + Device Number (5b) + Function Number (3b) 組成，用於路由響應。
   - **Address**：64-bit 或 32-bit 地址。
-- **Data Payload (数据载荷)**：仅在 Write 请求或 Read 完成包中存在，最大 4KB。
-- **ECRC (End-to-End CRC)**：可选的 32-bit 校验，确保数据在穿越 Switch 时的端到端完整性。
+- **Data Payload (資料載荷)**：僅在 Write 請求或 Read 完成包中存在，最大 4KB。
+- **ECRC (End-to-End CRC)**：可選的 32-bit 校驗，確保資料在穿越 Switch 時的端到端完整性。
 
-### 4.4 QoS 与流量控制 (Flow Control)
+### 4.4 QoS 與流量控制 (Flow Control)
 
-PCIe 采用基于**信用 (Credit)** 的流控机制，而非简单的忙/闲状态。
+PCIe 採用基於**信用 (Credit)** 的流控機制，而非簡單的忙/閒狀態。
 
-- **Traffic Class (TC)**：TLP Header 中的 3-bit 字段，定义 8 个优先级（TC0-TC7）。
-- **Virtual Channel (VC)**：物理缓冲区，TC 映射到 VC。不同 VC 独立仲裁，防止低优先级阻塞高优先级流量。
+- **Traffic Class (TC)**：TLP Header 中的 3-bit 字段，定義 8 個優先順序（TC0-TC7）。
+- **Virtual Channel (VC)**：物理緩衝區，TC 映射到 VC。不同 VC 獨立仲裁，防止低優先順序阻塞高優先順序流量。
 - **Flow Control Credits**：
-  - 接收端定期向发送端广播当前可用的缓冲区空间（Credits）。
-  - Credit 分为 3 类：**Posted (P)**, **Non-Posted (NP)**, **Completion (Cpl)**。
-  - 每类又分为 **Header (H)** 和 **Data (D)** 两种信用。
-  - 发送端只有在拥有足够 Credit 时才发送 TLP，从根本上消除了接收端缓冲区溢出导致的丢包。
+  - 接收端定期向傳送端廣播當前可用的緩衝區空間（Credits）。
+  - Credit 分為 3 類：**Posted (P)**, **Non-Posted (NP)**, **Completion (Cpl)**。
+  - 每類又分為 **Header (H)** 和 **Data (D)** 兩種信用。
+  - 傳送端只有在擁有足夠 Credit 時才傳送 TLP，從根本上消除了接收端緩衝區溢位導致的丟包。
 
 ---
 
-## 5. PCIe 数据链路层 (Data Link Layer)
+## 5. PCIe 資料鏈路層 (Data Link Layer)
 
-数据链路层位于事务层和物理层之间，负责链路管理和数据完整性。
+資料鏈路層位於事務層和物理層之間，負責鏈路管理和資料完整性。
 
 ### 5.1 主要功能
 
-1. **TLP 组包与拆包**：为上层 TLP 增加 Sequence Number (2 Bytes) 和 LCRC (4 Bytes)。
-2. **数据完整性校验**：通过 LCRC 确保 TLP 在链路传输中未出错。
-3. **重传机制 (ACK/NAK)**：保证数据可靠传输。
+1. **TLP 組包與拆包**：為上層 TLP 增加 Sequence Number (2 Bytes) 和 LCRC (4 Bytes)。
+2. **資料完整性校驗**：透過 LCRC 確保 TLP 在鏈路傳輸中未出錯。
+3. **重傳機制 (ACK/NAK)**：保證資料可靠傳輸。
 
 ### 5.2 DLLP (Data Link Layer Packet)
 
-数据链路层会产生仅在相邻设备间传输的数据链路层包 (DLLP)，不包含数据载荷，长度固定（通常 6 字节）。常见类型：
+資料鏈路層會產生僅在相鄰裝置間傳輸的資料鏈路層包 (DLLP)，不包含資料載荷，長度固定（通常 6 位元組）。常見類型：
 
-- **ACK/NAK DLLP**：用于确认 TLP 接收状态。
-- **InitFC1/InitFC2/UpdateFC**：用于流量控制信用的初始化和更新。
-- **PM (Power Management)**：电源管理相关交互。
+- **ACK/NAK DLLP**：用於確認 TLP 接收狀態。
+- **InitFC1/InitFC2/UpdateFC**：用於流量控制信用的初始化和更新。
+- **PM (Power Management)**：電源管理相關互動。
 
-### 5.3 ACK/NAK 重传协议
+### 5.3 ACK/NAK 重傳協議
 
-- **Transmitter**：发送 TLP 后，将其副本保存在 **Replay Buffer** 中。
-- **Receiver**：收到 TLP 后校验 LCRC 和 Sequence Number。
-  - **校验通过**：返回 **ACK**，发送端清除 Replay Buffer 中对应的 TLP。
-  - **校验失败**：返回 **NAK**，发送端重发 Replay Buffer 中的所有 TLP。
-- 这种机制确保了即使物理层偶发误码，上层软件也无需干预，看到的是一条无错链路。
-
----
-
-## 6. PCIe 物理层 (Physical Layer)
-
-物理层负责逻辑与电气信号的转换，是 PCIe 协议栈的最底层。
-
-### 6.1 逻辑子层与电气子层
-
-- **逻辑子层 (Logical Sub-block)**：
-  - **Byte Striping**：将数据流分发到多个 Lane 上（x1, x4, x16...）。
-  - **Scrambling (扰码)**：通过异或操作打散数据规律，降低 EMI（电磁干扰）。
-  - **Encoding (编码)**：
-    - **8b/10b** (Gen1/2)：每 8-bit 数据编码为 10-bit 符号，引入 20% 开销。
-    - **128b/130b** (Gen3/4/5)：每 128-bit 数据增加 2-bit 同步头，开销降至 ~1.5%。
-    - **PAM-4/1b/1b** (Gen6+)：采用 4 电平脉冲调制和 FLIT 编码。
-- **电气子层 (Electrical Sub-block)**：
-  - **SerDes**：负责并行数据与高频串行信号的转换。
-  - **Differential Driver/Receiver**：驱动差分对，实现低压差分信号传输。
-
-### 6.2 链路训练与状态机 (LTSSM)
-
-PCIe 链路的初始化和管理由 **LTSSM (Link Training and Status State Machine)** 控制。主要状态包括：
-
-1. **Detect**：检测接收端是否连接了设备（通过检测终端电阻）。
-2. **Polling**：发送训练序列（TS1/TS2），确立 Bit Lock 和 Symbol Lock。
-3. **Configuration**：协商链路宽度（Link Width）和通道编号（Lane Numbering），处理 Lane Reversal。
-4. **L0**：**正常工作状态**，传输数据。
-5. **Recovery**：当链路出错或需要改变速率（Speed Change）时进入此状态，重新训练。
-6. **L1/L2**：低功耗状态，暂停数据传输以省电。
+- **Transmitter**：发送 TLP 后，將其副本儲存在 **Replay Buffer** 中。
+- **Receiver**：收到 TLP 後校驗 LCRC 和 Sequence Number。
+  - **校驗透過**：返回 **ACK**，发送端清除 Replay Buffer 中對應的 TLP。
+  - **校驗失敗**：返回 **NAK**，发送端重发 Replay Buffer 中的所有 TLP。
+- 這種機制確保了即使物理層偶發誤碼，上層軟體也無需干預，看到的是一條無錯鏈路。
 
 ---
 
-## 7. 实例分析：Memory Read 操作
+## 6. PCIe 物理層 (Physical Layer)
 
-为了更好地理解上述概念，我们看一个 **Endpoint 向 System Memory 读取数据** 的过程（Non-Posted）：
+物理層負責邏輯與電氣訊號的轉換，是 PCIe 協議棧的最底層。
+
+### 6.1 邏輯子層與電氣子層
+
+- **邏輯子層 (Logical Sub-block)**：
+  - **Byte Striping**：將資料流分發到多個 Lane 上（x1, x4, x16...）。
+  - **Scrambling (擾碼)**：透過異或操作打散資料規律，降低 EMI（電磁干擾）。
+  - **Encoding (編碼)**：
+    - **8b/10b** (Gen1/2)：每 8-bit 資料編碼為 10-bit 符號，引入 20% 開銷。
+    - **128b/130b** (Gen3/4/5)：每 128-bit 資料增加 2-bit 同步頭，開銷降至 ~1.5%。
+    - **PAM-4/1b/1b** (Gen6+)：采用 4 電平脈衝調製和 FLIT 編碼。
+- **電氣子層 (Electrical Sub-block)**：
+  - **SerDes**：負責並行資料與高頻序列訊號的轉換。
+  - **Differential Driver/Receiver**：驅動差分對，實現低壓差分訊號傳輸。
+
+### 6.2 鏈路訓練與狀態機 (LTSSM)
+
+PCIe 鏈路的初始化和管理由 **LTSSM (Link Training and Status State Machine)** 控制。主要狀態包括：
+
+1. **Detect**：檢測接收端是否連線了裝置（透過檢測終端電阻）。
+2. **Polling**：傳送訓練序列（TS1/TS2），確立 Bit Lock 和 Symbol Lock。
+3. **Configuration**：協商鏈路寬度（Link Width）和通道編號（Lane Numbering），處理 Lane Reversal。
+4. **L0**：**正常工作狀態**，傳輸資料。
+5. **Recovery**：當鏈路出錯或需要改變速率（Speed Change）時進入此狀態，重新訓練。
+6. **L1/L2**：低功耗狀態，暫停資料傳輸以省電。
+
+---
+
+## 7. 實例分析：Memory Read 操作
+
+為了更好地理解上述概念，我們看一個 **Endpoint 向 System Memory 讀取資料** 的過程（Non-Posted）：
 
 1. **Requester (Endpoint)**：
-   - 事务层构建 **MRd (Memory Read)** TLP，包含目标地址、Requester ID、Tag 等。
-   - 数据链路层增加 Sequence Number 和 LCRC，暂存入 Replay Buffer。
-   - 物理层进行编码、串行化，通过 Link 发送给 Switch/Root Complex。
+   - 事務層構建 **MRd (Memory Read)** TLP，包含目標地址、Requester ID、Tag 等。
+   - 資料鏈路層增加 Sequence Number 和 LCRC，暫存入 Replay Buffer。
+   - 物理層進行編碼、串行化，透過 Link 傳送給 Switch/Root Complex。
 
 2. **Switch/Root Complex**：
-   - 接收并校验 TLP（物理层 -> 数据链路层）。
-   - 若无误，返回 ACK DLLP（Endpoint 收到后释放 Replay Buffer）。
-   - 路由逻辑将 TLP 转发至目标（System Memory 控制器）。
+   - 接收並校驗 TLP（物理層 -> 資料鏈路層）。
+   - 若無誤，返回 ACK DLLP（Endpoint 收到後釋放 Replay Buffer）。
+   - 路由邏輯將 TLP 轉發至目標（System Memory 控制器）。
 
 3. **Completer (System Memory)**：
-   - 读取内存数据。
-   - 构建 **CplD (Completion with Data)** TLP，包含请求的数据、Completer ID，并复制请求中的 Requester ID 和 Tag 以便匹配。
+   - 讀取記憶體資料。
+   - 構建 **CplD (Completion with Data)** TLP，包含請求的資料、Completer ID，並複製請求中的 Requester ID 和 Tag 以便匹配。
 
-4. **返回路径**：
-   - CplD TLP 经过反向路径路由回 Endpoint。
-   - Endpoint 的事务层接收 CplD，利用 Tag 匹配原始请求，完成读取操作。
+4. **返回路徑**：
+   - CplD TLP 經過反向路徑路由回 Endpoint。
+   - Endpoint 的事務層接收 CplD，利用 Tag 匹配原始請求，完成讀取操作。
 
 ---
 
-> **总结**：PCIe 通过分层架构、串行差分传输、流控和重传机制，完美解决了并行 PCI 总线的速度瓶颈和可靠性问题，成为现代计算机系统的基石。
+> **總結**：PCIe 透過分層架構、序列差分傳輸、流控和重傳機制，完美解決了並行 PCI 匯流排的速度瓶頸和可靠性問題，成為現代計算機系統的基石。

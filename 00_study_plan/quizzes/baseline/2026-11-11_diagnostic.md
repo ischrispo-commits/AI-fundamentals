@@ -18,7 +18,7 @@
 | 10  | 微調（W8）                | LoRA 核心做法                          | A      | A    | ✅           |
 | 11  | 雲原生（W6）              | Pod 申請 GPU 靠哪個機制                | ?      | D    | 不會         |
 | 12  | 互連（W2）                | GPUDirect RDMA 的好處                  | C      | C    | ✅           |
-| 13  | 集群通信（W5）            | Ring AllReduce 每卡送出量              | ?      | D    | 不會         |
+| 13  | 叢集通訊（W5）            | Ring AllReduce 每卡送出量              | ?      | D    | 不會         |
 | 14  | 推理系統（W9）            | PagedAttention 解決什麼                | ?      | B    | 不會         |
 | 15  | MoE（W8）                 | Expert Parallelism 的通信模式          | ?      | A    | 不會         |
 | 16  | GPU 運維（W4）            | `nvidia-smi` GPU-Util 100% 的意義      | ?      | B    | 不會         |

@@ -75,4 +75,4 @@ python3 .claude/skills/retrieval-quiz-builder/scripts/check_quiz.py 00_study_pla
 | 自己補一個 K 點沒有的「事實」        | 不行；遷移題除外，且遷移題解答要指回 K 點                          |
 | 每日 6 題全部來自昨天                | 第 3～5 題必須是間隔抽題；腳本會給來源日                           |
 | 忘了口說題或口說題沒指定受眾         | 第 6 題固定 OR，受眾依星期輪替（Pre-sales 版）                      |
-| 用簡體                               | 題目與解答繁體；引用原文可簡體加引號                               |
+| 用簡體                               | 題目、解答與引文一律繁體                                           |

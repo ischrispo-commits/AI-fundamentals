@@ -92,7 +92,7 @@ D1 模組一錯題重測；D2 模組二錯題重測；D3（12/30）累積測驗 
 | --- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D1  | Token 經濟與四層槓桿                                      | `99_misc/token_factory_talk/outline.md`、`99_misc/token_factory_talk/talk-illustrated.md`                                                                     |
 | D2  | 單位經濟與 API 定價分析                                   | `09_inference_system/cost_analysis/deepseek_inference_cluster_unit_economics.md`、`09_inference_system/cost_analysis/llm_api_pricing_analysis.md`              |
-| D3  | 集群產能：Goodput 與 SLO                                  | `99_misc/token_factory_talk/cluster-capacity-measurement.md`                                                                                                  |
+| D3  | 叢集產能：Goodput 與 SLO                                  | `99_misc/token_factory_talk/cluster-capacity-measurement.md`                                                                                                  |
 | D4  | KV 容量規劃與 ROI、記憶體分層、LMCache／Mooncake 概念      | `09_inference_system/kv_cache/01_concepts/10_capacity_planning/01_hbm_kv_pool_concurrency.md`、`.../10_capacity_planning/02_kv_cache_roi.md`、`09_inference_system/kv_cache/04_memory_tiering/01_memory-tiering-overview.md`、`09_inference_system/kv_cache/02_systems/01_lmcache/01_lmcache_overview.md`、`.../02_systems/04_mooncake/01_mooncake_architecture.md` |
 | D5  | B300 部署與 KV、HBF vs HBM；TCO 模型組裝                   | `09_inference_system/deployment/b300-deployment-and-kv-cache.md`、`09_inference_system/hbf-vs-hbm.md`；外部 T6                                                 |
 

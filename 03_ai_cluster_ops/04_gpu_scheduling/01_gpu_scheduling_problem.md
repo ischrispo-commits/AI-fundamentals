@@ -1,107 +1,107 @@
-# GPU 调度为什么比 CPU 调度难——碎片化、拓扑、Gang Scheduling
+# GPU 排程為什麼比 CPU 排程難——碎片化、拓撲、Gang Scheduling
 
-Kubernetes 默认调度器把 GPU 当成标量资源（`nvidia.com/gpu: 1`），和 CPU 的 `cpu: 4` 没什么区别。这个模型对于单 GPU 作业基本够用，但对于 AI 集群的真实负载有三个致命盲区：GPU 碎片化、拓扑不感知、Gang Scheduling 缺失。
+Kubernetes 預設排程器把 GPU 當成標量資源（`nvidia.com/gpu: 1`），和 CPU 的 `cpu: 4` 沒什麼區別。這個模型對於單 GPU 作業基本夠用，但對於 AI 叢集的真實負載有三個致命盲區：GPU 碎片化、拓撲不感知、Gang Scheduling 缺失。
 
-本文从这三个问题出发，解释为什么 AI 集群需要 GPU 感知的调度策略。后文展开具体的解决方案：Gang Scheduling（§02）、拓扑感知（§03）、GPU 共享调度（§04）。
+本文從這三個問題出發，解釋為什麼 AI 叢集需要 GPU 感知的排程策略。後文展開具體的解決方案：Gang Scheduling（§02）、拓撲感知（§03）、GPU 共享排程（§04）。
 
 ---
 
-## 一、盲区 1：GPU 碎片化——4 张空闲 GPU ≠ 可以跑 4-GPU 的训练任务
+## 一、盲區 1：GPU 碎片化——4 張空閒 GPU ≠ 可以跑 4-GPU 的訓練任務
 
-K8s 默认调度器做的是「装箱」：把每个 Pod 放到一个满足资源请求的节点上。假设集群有 2 个 8-GPU 节点，节点 A 已经被 4 个单 GPU 作业各占了一张 GPU（GPU 0/2/4/6），剩余 4 张 GPU 空闲。此时一个请求 4 张 GPU 的训练 Pod 提交，默认调度器看到节点 A 有 4 张空闲 GPU，会把它调度上去。
+K8s 預設排程器做的是「裝箱」：把每個 Pod 放到一個滿足資源請求的節點上。假設叢集有 2 個 8-GPU 節點，節點 A 已經被 4 個單 GPU 作業各佔了一張 GPU（GPU 0/2/4/6），剩余 4 張 GPU 空閒。此時一個請求 4 張 GPU 的訓練 Pod 提交，預設排程器看到節點 A 有 4 張空閒 GPU，會把它排程上去。
 
-然后 Pod 启动失败。
+然后 Pod 啟動失敗。
 
-为什么？看剩余的卡落在哪。GPU 0/2/4/6 被占满后，剩下的是 GPU 1/3/5/7。如果这 4 张卡跨了 NVLink 域或 NUMA 边界（分散在不同 PCIe switch 下、不同 NUMA node 上），TP=4 训练的 NCCL 通信就要在 PCIe 和 NUMA 之间来回跳跃，带宽会从 NVLink 的数百 GB/s 掉到 PCIe 的几十 GB/s（PCIe Gen4 x16 单向约 32 GB/s、Gen5 单向约 64 GB/s，跨 socket 再叠加 UPI 一跳约 28 GB/s，均为数量级估计）；如果它们仍在同一个 NVLink 域内，训练就不受影响。默认调度器分辨不出这两种情况。
+為什麼？看剩余的卡落在哪。GPU 0/2/4/6 被佔滿後，剩下的是 GPU 1/3/5/7。如果這 4 張卡跨了 NVLink 域或 NUMA 邊界（分散在不同 PCIe switch 下、不同 NUMA node 上），TP=4 訓練的 NCCL 通信就要在 PCIe 和 NUMA 之間來回跳躍，頻寬會從 NVLink 的數百 GB/s 掉到 PCIe 的几十 GB/s（PCIe Gen4 x16 單向約 32 GB/s、Gen5 單向約 64 GB/s，跨 socket 再疊加 UPI 一跳約 28 GB/s，均為數量級估計）；如果它們仍在同一個 NVLink 域內，訓練就不受影響。預設排程器分辨不出這兩種情況。
 
-**真实案例：一台 8×H100 的 NVSwitch 全互联拓扑**（`nvidia-smi topo -m` 实测）：
+**真實案例：一台 8×H100 的 NVSwitch 全互聯拓撲**（`nvidia-smi topo -m` 實測）：
 
 ```text
         GPU0    GPU1    GPU2    GPU3    GPU4    GPU5    GPU6    GPU7
 GPU0     X      NV18    NV18    NV18    NV18    NV18    NV18    NV18
 GPU1    NV18     X      NV18    NV18    NV18    NV18    NV18    NV18
-...（所有 8 张 GPU 两两之间均为 NV18，同一个 NVSwitch 域）
+...（所有 8 張 GPU 兩兩之間均為 NV18，同一個 NVSwitch 域）
 ```
 
-所有 GPU 共享一个 NVSwitch 域，任意 pair 都有完整的 450 GB/s 单向带宽。现在假设 4 个单 GPU 推理 Pod 分别占用了 GPU 0、2、4、6：
+所有 GPU 共享一個 NVSwitch 域，任意 pair 都有完整的 450 GB/s 單向頻寬。現在假設 4 個單 GPU 推理 Pod 分別佔用了 GPU 0、2、4、6：
 
 ```text
-节点 A (8×H100, NVSwitch 全互联)
+節點 A (8×H100, NVSwitch 全互聯)
 ┌─┬─┬─┬─┬─┬─┬─┬─┐
-│■│ │■│ │■│ │■│ │  ← 4 个推理 Pod 各占一张 GPU
+│■│ │■│ │■│ │■│ │  ← 4 個推理 Pod 各佔一張 GPU
 └─┴─┴─┴─┴─┴─┴─┴─┘
  0 1 2 3 4 5 6 7
 
-剩余空闲: GPU 1,3,5,7 (4 张)
-NVLink 实测带宽: 任意 pair ~316 GB/s (all_reduce bus_bw)
+剩餘空閒: GPU 1,3,5,7 (4 張)
+NVLink 實測頻寬: 任意 pair ~316 GB/s (all_reduce bus_bw)
 ```
 
-此时提交一个 TP=4 的训练作业，请求 4 张 GPU。K8s 默认调度器看到 `Allocatable: 4, Requested: 4 → OK`，调度成功。NVLink 实测也正常：这台 H100 的 8 张 GPU 全部在同一个 NVSwitch 域内，GPU 1/3/5/7 之间同样是 NVLink 全速互联，训练不受影响。
+此時提交一個 TP=4 的訓練作業，請求 4 張 GPU。K8s 預設排程器看到 `Allocatable: 4, Requested: 4 → OK`，排程成功。NVLink 實測也正常：這台 H100 的 8 張 GPU 全部在同一個 NVSwitch 域內，GPU 1/3/5/7 之間同樣是 NVLink 全速互聯，訓練不受影響。
 
-但如果把同样的场景放到一台 **无 NVSwitch、按 4 张一组 NVLink bridge 分组的 A100 服务器**（常见的 8 卡 A100 机型）上：
+但如果把同樣的場景放到一台 **無 NVSwitch、按 4 張一組 NVLink bridge 分組的 A100 伺服器**（常見的 8 卡 A100 機型）上：
 
 ```text
-节点 B (8×A100, 无 NVSwitch, NVLink bridge 分组)
-组 1 (GPU 0-3):  两两 NVLink ~600 GB/s 双向 (bridge 互联)
-组 2 (GPU 4-7):  两两 NVLink ~600 GB/s 双向 (bridge 互联)
-跨组 (GPU 0↔4):  PCIe P2P ~32 GB/s (Gen4 x16 单向, 数量级估计)  ← 只有 NVLink 的 1/10-1/5
+節點 B (8×A100, 無 NVSwitch, NVLink bridge 分組)
+組 1 (GPU 0-3):  兩兩 NVLink ~600 GB/s 雙向 (bridge 互聯)
+組 2 (GPU 4-7):  兩兩 NVLink ~600 GB/s 雙向 (bridge 互聯)
+跨組 (GPU 0↔4):  PCIe P2P ~32 GB/s (Gen4 x16 單向, 數量級估計)  ← 只有 NVLink 的 1/10-1/5
 ```
 
-此时 GPU 0/2/4/6 被占用后，剩余的 GPU 1/3/5/7 分属两个 bridge 组。TP=4 作业被调度到 GPU 1,3（组 1）和 GPU 5,7（组 2），跨组通信只能走 PCIe，训练吞吐从 90% 利用率跌到 30%。
+此時 GPU 0/2/4/6 被占用后，剩余的 GPU 1/3/5/7 分屬兩個 bridge 組。TP=4 作業被排程到 GPU 1,3（組 1）和 GPU 5,7（組 2），跨組通訊只能走 PCIe，訓練吞吐從 90% 利用率跌到 30%。
 
-默认调度器在两个场景下看到的完全一样：`Allocatable: 4, Requested: 4 → OK`。但实际结果天差地别，前者正常训练，后者慢 3 倍。`nvidia.com/gpu` 表达不了 NVLink 域的拓扑边界。
+預設排程器在兩個場景下看到的完全一樣：`Allocatable: 4, Requested: 4 → OK`。但實際結果天差地別，前者正常訓練，后者慢 3 倍。`nvidia.com/gpu` 表達不了 NVLink 域的拓撲邊界。
 
-解决方案方向：拓扑感知调度 + 碎片整理（重调度/deschedule 低优先级单 GPU 作业）。
+解決方案方向：拓撲感知排程 + 碎片整理（重排程/deschedule 低優先順序單 GPU 作業）。
 
 ---
 
-## 二、盲区 2：拓扑不感知——最近的 GPU 不一定是挨着编号的
+## 二、盲區 2：拓撲不感知——最近的 GPU 不一定是挨著編號的
 
-K8s 默认调度器不理解 GPU 之间的通信路径。它看到两张 GPU，不会知道它们之间走 NVLink 还是 PCIe、延迟差几个数量级。
+K8s 預設排程器不理解 GPU 之間的通訊路徑。它看到兩張 GPU，不會知道它們之間走 NVLink 還是 PCIe、延遲差幾個數量級。
 
 ```text
 GPU 0 ← NVLink 450 GB/s       → GPU 1  ← 同一 NVLink 域，最快
-GPU 0 ← PCIe ~32-64 GB/s      → GPU 4  ← 跨 NUMA，次快（Gen4/Gen5 单向，数量级估计）
-GPU 0 ← UPI ~28 GB/s（经验值）→ GPU 8  ← 跨 socket（双路服务器），最慢
+GPU 0 ← PCIe ~32-64 GB/s      → GPU 4  ← 跨 NUMA，次快（Gen4/Gen5 單向，數量級估計）
+GPU 0 ← UPI ~28 GB/s（經驗值）→ GPU 8  ← 跨 socket（雙路伺服器），最慢
 ```
 
-（示意图按双路服务器通用画法：单节点 8 卡通常编号 0-7，跨 socket 的卡只在 16 卡这类更大规格的节点上才会编到 8。）
+（示意圖按雙路伺服器通用畫法：單節點 8 卡通常編號 0-7，跨 socket 的卡只在 16 卡這類更大規格的節點上才會編到 8。）
 
-对于单 GPU 推理任务，拓扑无关紧要。对于 TP=8 的训练，GPU 之间的通信路径决定了吞吐。如果 8 张 GPU 不在同一个 NVLink 域内、甚至跨了节点，训练吞吐可能从 90% 利用率跌到 30%。
+對於單 GPU 推理任務，拓撲無關緊要。對於 TP=8 的訓練，GPU 之間的通訊路徑決定了吞吐。如果 8 張 GPU 不在同一個 NVLink 域內、甚至跨了節點，訓練吞吐可能從 90% 利用率跌到 30%。
 
-节点内的拓扑信息来自 `nvidia-smi topo -m`。NVIDIA 早年提供一个 topology-aware scheduler 插件来消费这些信息，但该项目已下线（文档页与 GitHub 仓库均已 404），现行方案是 KAI-Scheduler（已入 CNCF sandbox）配合 Topograph 拓扑导出层，详见[拓扑感知调度](03_topology_aware_scheduling.md)。另外要注意，拓扑感知调度的效果取决于 GPU 资源的实际分配状态：在高负载混合集群中，拓扑最优的 GPU 很可能已经被其他作业占用了。
-
----
-
-## 三、盲区 3：Gang Scheduling——要么全调度，要么全不等
-
-训练任务是 All-or-Nothing 的：PyTorch DDP 初始化 NCCL communicator 时需要 **全部 rank 同时在线**。如果 8 GPU 的训练任务只有 6 个 Pod 被调度、另外 2 个还在 Pending，已有的 6 个 Pod 会阻塞在 `init_process_group` 上——**占着 GPU 但不计算**，直到超时。
-
-这种部分调度的后果是多重浪费：
-
-- 已调度的 Pod 占着 GPU 空转
-- 未调度的 Pod 在队列中卡住
-- 其他等待 GPU 的作业因为「GPU 看似被占满」而得不到调度
-
-K8s 默认调度器是逐个 Pod 独立决策的，无法理解「只有全部 Pod 都能调度时，这个作业才有意义」。解决这个问题需要 Gang Scheduling：调度器在确认所有 Pod 的 GPU 需求都能满足之前，不为任何一个 Pod 做调度决策。Volcano 的 Coscheduling 和 Kubernetes 原生的 SchedulingGates 是实现这一需求的主流方案。详见 [Gang Scheduling：分布式训练的 All-or-Nothing 调度](02_gang_scheduling_for_training.md)。
+節點內的拓撲資訊來自 `nvidia-smi topo -m`。NVIDIA 早年提供一個 topology-aware scheduler 外掛來消費這些資訊，但該專案已下線（文件頁與 GitHub 倉庫均已 404），現行方案是 KAI-Scheduler（已入 CNCF sandbox）配合 Topograph 拓撲匯出層，詳見[拓撲感知排程](03_topology_aware_scheduling.md)。另外要注意，拓撲感知排程的效果取決於 GPU 資源的實際分配狀態：在高負載混合叢集中，拓撲最優的 GPU 很可能已經被其他作業佔用了。
 
 ---
 
-## 四、三个盲区的解决路径
+## 三、盲區 3：Gang Scheduling——要麼全排程，要麼全不等
 
-| 盲区               | 现象                                    | 解决方向                          | 详见                                      |
+訓練任務是 All-or-Nothing 的：PyTorch DDP 初始化 NCCL communicator 時需要 **全部 rank 同時線上**。如果 8 GPU 的訓練任務只有 6 個 Pod 被排程、另外 2 個還在 Pending，已有的 6 個 Pod 會阻塞在 `init_process_group` 上——**占着 GPU 但不計算**，直到超時。
+
+這種部分排程的後果是多重浪費：
+
+- 已排程的 Pod 占着 GPU 空轉
+- 未排程的 Pod 在佇列中卡住
+- 其他等待 GPU 的作業因為「GPU 看似被佔滿」而得不到排程
+
+K8s 預設排程器是逐個 Pod 獨立決策的，無法理解「只有全部 Pod 都能排程時，這個作業才有意義」。解決這個問題需要 Gang Scheduling：排程器在確認所有 Pod 的 GPU 需求都能滿足之前，不為任何一個 Pod 做排程決策。Volcano 的 Coscheduling 和 Kubernetes 原生的 SchedulingGates 是實現這一需求的主流方案。詳見 [Gang Scheduling：分散式訓練的 All-or-Nothing 排程](02_gang_scheduling_for_training.md)。
+
+---
+
+## 四、三個盲區的解決路徑
+
+| 盲區               | 現象                                    | 解決方向                          | 詳見                                      |
 | ------------------ | --------------------------------------- | --------------------------------- | ----------------------------------------- |
-| GPU 碎片化         | 多 GPU 训练无法找到连续 GPU 组          | 拓扑感知调度 + 碎片整理           | [§03](03_topology_aware_scheduling.md)    |
-| 拓扑不感知         | 调度到跨 NUMA/跨 socket 的 GPU，通信慢  | NVLink/NUMA 感知的 Filter + Score | [§03](03_topology_aware_scheduling.md)    |
-| 无 Gang Scheduling | 训练任务部分 Pod 占 GPU 空转            | Coscheduling / SchedulingGates    | [§02](02_gang_scheduling_for_training.md) |
-| GPU 共享的粒度     | MIG/MPS/Timeslicing 如何暴露为 K8s 资源 | Device Plugin 的不同策略          | [§04](04_gpu_sharing_scheduling.md)       |
+| GPU 碎片化         | 多 GPU 訓練無法找到連續 GPU 組          | 拓撲感知排程 + 碎片整理           | [§03](03_topology_aware_scheduling.md)    |
+| 拓撲不感知         | 排程到跨 NUMA/跨 socket 的 GPU，通信慢  | NVLink/NUMA 感知的 Filter + Score | [§03](03_topology_aware_scheduling.md)    |
+| 無 Gang Scheduling | 訓練任務部分 Pod 占 GPU 空轉            | Coscheduling / SchedulingGates    | [§02](02_gang_scheduling_for_training.md) |
+| GPU 共享的粒度     | MIG/MPS/Timeslicing 如何暴露為 K8s 資源 | Device Plugin 的不同策略          | [§04](04_gpu_sharing_scheduling.md)       |
 
 ---
 
-## 相关资源
+## 相關資源
 
-- [Kubernetes 调度器介绍](https://github.com/ForceInjection/kubernetes-hands-on-course/tree/master/Advanced-Topics/调度/k8s-scheduler-intro-basic.md) — 默认调度器的工作原理
-- [GPU 调度器扩展案例](https://github.com/ForceInjection/kubernetes-hands-on-course/tree/master/Advanced-Topics/调度/k8s-scheduler-gpu-case.md) — Device Plugin + 自定义调度器扩展
-- [KAI-Scheduler（CNCF sandbox，NVIDIA 捐献）](https://github.com/kai-scheduler/KAI-Scheduler)
-- [NVIDIA Topograph](https://docs.nvidia.com/topograph/) — 拓扑导出层，把集群拓扑暴露给调度器
-- [NCCL 通信路径逐层压测](../03_nccl/06_nccl_path_benchmark.md) — NVLink 和 PCIe 到底差多少
+- [Kubernetes 排程器介紹](https://github.com/ForceInjection/kubernetes-hands-on-course/tree/master/Advanced-Topics/调度/k8s-scheduler-intro-basic.md) — 預設排程器的工作原理
+- [GPU 排程器擴展案例](https://github.com/ForceInjection/kubernetes-hands-on-course/tree/master/Advanced-Topics/调度/k8s-scheduler-gpu-case.md) — Device Plugin + 自定義排程器擴展
+- [KAI-Scheduler（CNCF sandbox，NVIDIA 捐獻）](https://github.com/kai-scheduler/KAI-Scheduler)
+- [NVIDIA Topograph](https://docs.nvidia.com/topograph/) — 拓撲匯出層，把叢集拓撲暴露給排程器
+- [NCCL 通訊路徑逐層壓測](../03_nccl/06_nccl_path_benchmark.md) — NVLink 和 PCIe 到底差多少

@@ -1,20 +1,20 @@
-# NVIDIA GPUDirect P2P 技术详解：节点内 GPU 高速互联
+# NVIDIA GPUDirect P2P 技術詳解：節點內 GPU 高速互聯
 
 ## 1. 引言
 
-在单机多卡（Single Node Multi-GPU）的深度学习训练和高性能计算场景中，GPU 之间频繁的数据交换是不可避免的。传统的 GPU 间通信（P2P, Peer-to-Peer）如果通过 CPU 系统内存中转，会带来显著的延迟和带宽瓶颈。
+在單機多卡（Single Node Multi-GPU）的深度學習訓練和高效能運算場景中，GPU 之間頻繁的資料交換是不可避免的。傳統的 GPU 間通訊（P2P, Peer-to-Peer）如果透過 CPU 系統記憶體中轉，會帶來顯著的延遲和頻寬瓶頸。
 
-**GPUDirect P2P (Peer-to-Peer)** 技术允许同一节点内的 GPU 直接访问彼此的显存，无需将数据拷贝到 CPU 主机内存。这是构建高效多卡并行计算的基础，也是 GPUDirect 家族中最基础且应用最广泛的技术之一。
+**GPUDirect P2P (Peer-to-Peer)** 技術允許同一節點內的 GPU 直接訪問彼此的顯存，無需將資料複製到 CPU 主機記憶體。這是構建高效多卡平行計算的基礎，也是 GPUDirect 家族中最基礎且應用最廣泛的技術之一。
 
 ---
 
-## 2. 技术原理
+## 2. 技術原理
 
-GPUDirect P2P 的核心在于绕过 CPU 和系统内存，利用 PCIe 总线的 **Peer-to-Peer TLP (Transaction Layer Packet) 转发**机制或 **NVLink 高速互连**协议，在 GPU 之间建立直接的 DMA (Direct Memory Access) 通路。
+GPUDirect P2P 的核心在於繞過 CPU 和系統記憶體，利用 PCIe 匯流排的 **Peer-to-Peer TLP (Transaction Layer Packet) 轉發**機制或 **NVLink 高速互連**協議，在 GPU 之間建立直接的 DMA (Direct Memory Access) 通路。
 
-### 2.1 数据路径与延迟模型
+### 2.1 資料路徑與延遲模型
 
-先对比传统的数据回弹（Bounce Buffer）路径与 GPUDirect P2P 的直接传输路径，差异集中在延迟与带宽利用率上。
+先對比傳統的資料回彈（Bounce Buffer）路徑與 GPUDirect P2P 的直接傳輸路徑，差異集中在延遲與頻寬利用率上。
 
 ```mermaid
 graph TD
@@ -45,110 +45,110 @@ graph TD
     linkStyle 2 stroke:#0f0,stroke-width:4px
 ```
 
-- **传统路径 (Bounce Buffer)**：
+- **傳統路徑 (Bounce Buffer)**：
 
-  1. **D2H (Device-to-Host)**：源 GPU 通过 DMA 将数据写入 CPU 系统内存（通常是 Pinned Memory）。
-  2. **H2D (Host-to-Device)**：目标 GPU 通过 DMA 从系统内存读取数据。
+  1. **D2H (Device-to-Host)**：源 GPU 透過 DMA 將資料寫入 CPU 系統記憶體（通常是 Pinned Memory）。
+  2. **H2D (Host-to-Device)**：目標 GPU 透過 DMA 從系統記憶體讀取資料。
 
-  - **瓶颈**：数据在 PCIe 总线上往返两次，增加了延迟；且受限于系统内存带宽和 CPU 内存控制器效率。
+  - **瓶頸**：資料在 PCIe 匯流排上往返兩次，增加了延遲；且受限於系統記憶體頻寬和 CPU 記憶體控制器效率。
 
-- **GPUDirect P2P 路径**：
+- **GPUDirect P2P 路徑**：
 
-  1. **D2D (Device-to-Device)**：源 GPU 的 DMA 引擎直接向目标 GPU 的物理地址发起写操作。
+  1. **D2D (Device-to-Device)**：源 GPU 的 DMA 引擎直接向目標 GPU 的實體地址發起寫操作。
 
-  - **优势**：数据仅经过 PCIe Switch 或 NVLink 互连，无需经过 Root Complex (在同一 Switch 下) 或 CPU 内存，实现了真正的零拷贝 (Zero-Copy)。
+  - **優勢**：資料僅經過 PCIe Switch 或 NVLink 互連，無需經過 Root Complex (在同一 Switch 下) 或 CPU 記憶體，實現了真正的零複製 (Zero-Copy)。
 
-### 2.2 关键技术支撑
+### 2.2 關鍵技術支撐
 
-GPUDirect P2P 的实现依赖于软硬件的紧密协同，包括软件层的**统一虚拟寻址** (UVA) 以及硬件层的 PCIe/NVLink 互连机制。
+GPUDirect P2P 的實現依賴於軟硬體的緊密協同，包括軟體層的**統一虛擬定址** (UVA) 以及硬體層的 PCIe/NVLink 互連機制。
 
-#### 2.2.1 统一虚拟寻址 (UVA) 与页表映射
+#### 2.2.1 統一虛擬定址 (UVA) 與頁表對映
 
-CUDA 4.0 引入的 **UVA** (Unified Virtual Addressing) 是 P2P 的软件基础。
+CUDA 4.0 引入的 **UVA** (Unified Virtual Addressing) 是 P2P 的軟體基礎。
 
-- **单一地址空间**：UVA 将 CPU 内存和所有 GPU 的显存映射到同一个 64 位虚拟地址空间。
-- **MMU 协同**：当开启 P2P (`cudaDeviceEnablePeerAccess`) 后，CUDA 驱动程序会修改 GPU 的页表 (Page Table)。它将目标 GPU (Peer GPU) 的物理地址范围映射到当前 GPU (Current GPU) 的虚拟地址空间中。
-- **直接寻址**：因此，CUDA Kernel 可以直接解引用一个指向 Peer GPU 显存的指针。GPU MMU 会自动将该虚拟地址翻译为目标 GPU 的物理地址，并发起通过 PCIe/NVLink 的访问请求。
+- **單一地址空間**：UVA 將 CPU 記憶體和所有 GPU 的顯存對映到同一個 64 位虛擬地址空間。
+- **MMU 協同**：當開啟 P2P (`cudaDeviceEnablePeerAccess`) 后，CUDA 驅動程式會修改 GPU 的頁表 (Page Table)。它將目標 GPU (Peer GPU) 的實體地址範圍對映到當前 GPU (Current GPU) 的虛擬地址空間中。
+- **直接定址**：因此，CUDA Kernel 可以直接解引用一個指向 Peer GPU 顯存的指標。GPU MMU 會自動將該虛擬地址翻譯為目標 GPU 的物理地址，併發起透過 PCIe/NVLink 的訪問請求。
 
-#### 2.2.2 PCIe P2P 机制与 BAR 空间
+#### 2.2.2 PCIe P2P 機制與 BAR 空間
 
-对于基于 PCIe 的 P2P，其底层依赖于 PCIe 规范中的 **Base Address Register (BAR)** 机制。
+對於基於 PCIe 的 P2P，其底層依賴於 PCIe 規範中的 **Base Address Register (BAR)** 機制。
 
-- **BAR 映射**：每个 GPU 在启动时都会将其显存的一部分（通常是几百 MB 到全部显存，取决于 Resizable BAR 设置）映射到 PCIe 总线物理地址空间。
-- **TLP 路由**：当源 GPU 发起对目标 GPU BAR 地址的写操作时，PCIe Switch 会根据地址路由 TLP 包。
-  - **同一 Switch 下**：Switch 直接将 TLP 转发给目标 GPU，不经过 CPU Root Complex。
-  - **跨 Switch/Root Port**：TLP 可能需要经过 Root Complex，此时如果 **ACS (Access Control Services)** 开启，会阻断 P2P 转发并将 TLP 重定向到 Root Complex，导致带宽减半。需关闭 ACS 或配置 ACS 直通策略。
+- **BAR 映射**：每個 GPU 在啟動時都會將其顯存的一部分（通常是几百 MB 到全部顯存，取決於 Resizable BAR 設定）映射到 PCIe 匯流排實體地址空間。
+- **TLP 路由**：當源 GPU 發起對目標 GPU BAR 地址的寫操作時，PCIe Switch 會根據地址路由 TLP 包。
+  - **同一 Switch 下**：Switch 直接將 TLP 轉發給目標 GPU，不經過 CPU Root Complex。
+  - **跨 Switch/Root Port**：TLP 可能需要經過 Root Complex，此時如果 **ACS (Access Control Services)** 開啟，會阻斷 P2P 轉發並將 TLP 重定向到 Root Complex，導致頻寬減半。需關閉 ACS 或配置 ACS 直通策略。
 
-#### 2.2.3 NVLink 高速互连
+#### 2.2.3 NVLink 高速互連
 
-NVLink 是 NVIDIA 专有的互连协议，专为多 GPU 通信优化。
+NVLink 是 NVIDIA 專有的互連協議，專為多 GPU 通訊最佳化。
 
-- **高带宽与低延迟**：相比 PCIe，NVLink 提供了更高的带宽（例如 H100 上的 NVLink 4.0 双向带宽达 900 GB/s）和更低的协议开销。
-- **内存语义**：NVLink 原生支持 Load/Store 内存语义，使得 GPU 间访问更接近于访问本地显存。
-- **拓扑结构**：通过 NVSwitch，可以构建全互联 (All-to-All) 的 GPU 网络，使得任意两个 GPU 之间的 P2P 性能一致，消除了 PCIe 树状拓扑带来的 NUMA 效应。
+- **高頻寬與低延遲**：相比 PCIe，NVLink 提供了更高的頻寬（例如 H100 上的 NVLink 4.0 雙向頻寬達 900 GB/s）和更低的協議開銷。
+- **記憶體語義**：NVLink 原生支持 Load/Store 記憶體語義，使得 GPU 間訪問更接近於訪問本地顯存。
+- **拓撲結構**：透過 NVSwitch，可以構建全互聯 (All-to-All) 的 GPU 網路，使得任意兩個 GPU 之間的 P2P 性能一致，消除了 PCIe 樹狀拓撲帶來的 NUMA 效應。
 
 ---
 
-## 3. 核心优势与性能对比
+## 3. 核心優勢與效能對比
 
-GPUDirect P2P 把 GPU 间传输从“两跳经系统内存”缩短为“一跳直达”。收益落在三个维度：带宽、延迟、CPU 占用。
+GPUDirect P2P 把 GPU 間傳輸從“兩跳經系統記憶體”縮短為“一跳直達”。收益落在三個維度：頻寬、延遲、CPU 占用。
 
-### 3.1 性能对比表
+### 3.1 效能對比表
 
-| 指标           | 传统路径 (Without P2P)                 | GPUDirect P2P                               |
+| 指標           | 傳統路徑 (Without P2P)                 | GPUDirect P2P                               |
 | :------------- | :------------------------------------- | :------------------------------------------ |
-| **数据路径**   | GPU A -> System Memory -> GPU B        | GPU A -> GPU B (Direct)                     |
-| **传输跳数**   | 2 跳 (Device-to-Host + Host-to-Device) | 1 跳 (Device-to-Device)                     |
-| **CPU 参与度** | 高 (需管理系统内存缓冲区)              | 低 (仅建立连接，不参与数据搬运)             |
-| **延迟**       | 高 (PCIe 往返 + 系统内存开销)          | 低 (直接通过 PCIe Switch 或 NVLink)         |
-| **带宽瓶颈**   | 受限于 PCIe 带宽及系统内存带宽         | 受限于 PCIe 或 NVLink (NVLink 可达 900GB/s) |
+| **資料路徑**   | GPU A -> System Memory -> GPU B        | GPU A -> GPU B (Direct)                     |
+| **傳輸跳數**   | 2 跳 (Device-to-Host + Host-to-Device) | 1 跳 (Device-to-Device)                     |
+| **CPU 參與度** | 高 (需管理系統記憶體緩衝區)              | 低 (僅建立連線，不參與資料搬運)             |
+| **延遲**       | 高 (PCIe 往返 + 系統記憶體開銷)          | 低 (直接透過 PCIe Switch 或 NVLink)         |
+| **頻寬瓶頸**   | 受限於 PCIe 頻寬及系統記憶體頻寬         | 受限於 PCIe 或 NVLink (NVLink 可達 900GB/s) |
 
-### 3.2 收益从哪来
+### 3.2 收益從哪來
 
-#### 3.2.1 带宽
+#### 3.2.1 頻寬
 
-PCIe 路径受限于总线带宽（例如 PCIe Gen5 x16 双向约为 128 GB/s）；NVLink 把互联带宽提到另一个量级。
+PCIe 路徑受限於匯流排頻寬（例如 PCIe Gen5 x16 雙向約為 128 GB/s）；NVLink 把互聯頻寬提到另一個量級。
 
-**NVLink 优势**：在 NVIDIA H100 GPU 上，NVLink 4.0 提供高达 **900 GB/s** 的双向聚合带宽，是 PCIe Gen5 的约 7 倍。这对于参数量巨大的大模型训练（如 Transformer 架构）至关重要，因为 `AllReduce` 等集合通信操作是带宽敏感型的。
+**NVLink 優勢**：在 NVIDIA H100 GPU 上，NVLink 4.0 提供高達 **900 GB/s** 的雙向聚合頻寬，是 PCIe Gen5 的約 7 倍。這對於參數量巨大的大模型訓練（如 Transformer 架構）至關重要，因為 `AllReduce` 等集合通訊操作是頻寬敏感型的。
 
-#### 3.2.2 延迟
+#### 3.2.2 延遲
 
-通过消除 **Bounce Buffer**（系统内存中转），P2P 显著降低了端到端延迟。
+透過消除 **Bounce Buffer**（系統記憶體中轉），P2P 顯著降低了端到端延遲。
 
-- **物理路径缩短**：在同一 PCIe Switch（PIX）下，数据不再需要经过 Root Complex 和 CPU 内存控制器，减少了物理链路长度。
-- **协议开销降低**：省去了 CPU 端的内存分配、锁页（Pinning）以及两次 DMA 描述符的建立过程。对于小包通信（Latency-sensitive），这种延迟优化尤为明显。
+- **物理路徑縮短**：在同一 PCIe Switch（PIX）下，資料不再需要經過 Root Complex 和 CPU 記憶體控制器，減少了物理鏈路長度。
+- **協議開銷降低**：省去了 CPU 端的記憶體分配、鎖頁（Pinning）以及兩次 DMA 描述符的建立過程。對於小包通訊（Latency-sensitive），這種延遲最佳化尤為明顯。
 
-#### 3.2.3 CPU 卸载
+#### 3.2.3 CPU 解除安裝
 
-在传统模式下，CPU 需要花费大量周期来管理 DMA 缓冲区和设置描述符。开启 P2P 后：
+在傳統模式下，CPU 需要花費大量週期來管理 DMA 緩衝區和設定描述符。開啟 P2P 后：
 
-- **控制流与数据流分离**：CPU 仅需负责发射指令（Launch Kernels/MemcpyAsync），繁重的数据搬运工作完全由 GPU 的 Copy Engine (DMA) 或 SM (通过 NVLink Load/Store) 完成。
-- **重叠执行**：CPU 可以立即返回执行其他逻辑，从而更容易实现计算与通信的重叠 (Compute-Communication Overlap)。
+- **控制流與資料流分離**：CPU 僅需負責發射指令（Launch Kernels/MemcpyAsync），繁重的資料搬運工作完全由 GPU 的 Copy Engine (DMA) 或 SM (透過 NVLink Load/Store) 完成。
+- **重疊執行**：CPU 可以立即返回執行其他邏輯，從而更容易實現計算與通訊的重疊 (Compute-Communication Overlap)。
 
-#### 3.2.4 编程模型的简化与统一
+#### 3.2.4 程式設計模型的簡化與統一
 
-P2P 支持 **Direct Memory Access (DMA)**，这意味着开发者可以将所有 GPU 的显存视为一个统一的地址空间。
+P2P 支持 **Direct Memory Access (DMA)**，這意味著開發者可以將所有 GPU 的顯存視為一個統一的地址空間。
 
-- **零代码迁移**：对于使用 Unified Memory (`cudaMallocManaged`) 的应用，驱动程序会自动利用 P2P 路径加速页迁移，无需修改任何代码。
-- **内核级访问**：CUDA Kernel 可以直接读写 Peer GPU 显存，这使得编写自定义的细粒度通信算法（如环形 AllReduce）变得非常直观。
+- **零程式碼遷移**：對於使用 Unified Memory (`cudaMallocManaged`) 的應用，驅動程式會自動利用 P2P 路徑加速頁遷移，無需修改任何程式碼。
+- **核心級訪問**：CUDA Kernel 可以直接讀寫 Peer GPU 顯存，這使得編寫自定義的細粒度通訊演算法（如環形 AllReduce）變得非常直觀。
 
 ---
 
-## 4. 开发者指南：API 与代码示例
+## 4. 開發者指南：API 與程式碼示例
 
-使用 GPUDirect P2P 主要涉及 CUDA Runtime API。开发者通常需要关注三个核心步骤：**查询拓扑**、**启用访问**、**执行传输**。
+使用 GPUDirect P2P 主要涉及 CUDA Runtime API。開發者通常需要關注三個核心步驟：**查詢拓撲**、**啟用訪問**、**執行傳輸**。
 
-### 4.1 启用 P2P 访问 (P2P Initialization)
+### 4.1 啟用 P2P 訪問 (P2P Initialization)
 
-P2P 访问并非默认开启。必须显式检查硬件支持并在每一对 GPU 之间建立连接。
+P2P 訪問並非預設開啟。必須顯式檢查硬體支援並在每一對 GPU 之間建立連線。
 
-> **注意**：`cudaDeviceEnablePeerAccess` 是一个昂贵的操作（可能涉及 TLB 刷新和页表修改），通常只需在应用程序启动时执行一次。
+> **注意**：`cudaDeviceEnablePeerAccess` 是一個昂貴的操作（可能涉及 TLB 重新整理和頁表修改），通常只需在應用程式啟動時執行一次。
 
 ```cpp
 #include <stdio.h>
 #include <cuda_runtime.h>
 
-// 简易错误检查宏
+// 簡易錯誤檢查宏
 #define CHECK(call) \
 { \
     const cudaError_t error = call; \
@@ -164,21 +164,21 @@ int main() {
     int gpuid1 = 1;
     int can_access_peer_0_1, can_access_peer_1_0;
 
-    // 1. 双向检查硬件支持
+    // 1. 雙向檢查硬體支援
     CHECK(cudaDeviceCanAccessPeer(&can_access_peer_0_1, gpuid0, gpuid1));
     CHECK(cudaDeviceCanAccessPeer(&can_access_peer_1_0, gpuid1, gpuid0));
 
     if (can_access_peer_0_1 && can_access_peer_1_0) {
         printf("P2P Access supported between GPU %d and GPU %d.\n", gpuid0, gpuid1);
 
-        // 2. 双向启用 P2P 访问
-        // 注意：必须切换到源设备来授权对目标设备的访问
+        // 2. 雙向啟用 P2P 訪問
+        // 注意：必須切換到源裝置來授權對目標裝置的訪問
 
-        // GPU 0 可以访问 GPU 1
+        // GPU 0 可以訪問 GPU 1
         CHECK(cudaSetDevice(gpuid0));
         CHECK(cudaDeviceEnablePeerAccess(gpuid1, 0));
 
-        // GPU 1 可以访问 GPU 0
+        // GPU 1 可以訪問 GPU 0
         CHECK(cudaSetDevice(gpuid1));
         CHECK(cudaDeviceEnablePeerAccess(gpuid0, 0));
 
@@ -191,55 +191,55 @@ int main() {
 }
 ```
 
-### 4.2 P2P 数据拷贝 (Async Copy)
+### 4.2 P2P 資料複製 (Async Copy)
 
-推荐使用 **异步拷贝 (`cudaMemcpyPeerAsync`)** 替代同步拷贝，以充分利用 Copy Engine 并实现计算与通信的重叠。
+推薦使用 **非同步複製 (`cudaMemcpyPeerAsync`)** 替代同步複製，以充分利用 Copy Engine 並實現計算與通訊的重疊。
 
 ```cpp
-// 分配显存
+// 分配顯存
 void *d_src, *d_dst;
 cudaSetDevice(gpuid0);
 cudaMalloc(&d_src, size);
 cudaSetDevice(gpuid1);
 cudaMalloc(&d_dst, size);
 
-// 创建流
+// 建立流
 cudaStream_t stream;
 cudaSetDevice(gpuid0);
 cudaStreamCreate(&stream);
 
-// P2P 异步拷贝：从 GPU 0 (src) 到 GPU 1 (dst)
-// 此时 CPU 不会被阻塞，可以继续处理其他任务
+// P2P 非同步複製：從 GPU 0 (src) 到 GPU 1 (dst)
+// 此時 CPU 不會被阻塞，可以繼續處理其他任務
 cudaMemcpyPeerAsync(d_dst, gpuid1, d_src, gpuid0, size, stream);
 
-// 同步流（等待传输完成）
+// 同步流（等待傳輸完成）
 cudaStreamSynchronize(stream);
 ```
 
-### 4.3 P2P 直接寻址 (Direct Access Kernel)
+### 4.3 P2P 直接定址 (Direct Access Kernel)
 
-在 Kernel 中直接读写远程 GPU 内存是最灵活的方式。利用 `__restrict__` 关键字可以帮助编译器优化加载指令。
+在 Kernel 中直接讀寫遠端 GPU 記憶體是最靈活的方式。利用 `__restrict__` 關鍵字可以幫助編譯器最佳化載入指令。
 
 ```cpp
-// Kernel: 运行在 GPU 0 上，读取 GPU 1 的数据
+// Kernel: 執行在 GPU 0 上，讀取 GPU 1 的資料
 __global__ void p2p_add_kernel(float* __restrict__ local_data,
                                const float* __restrict__ remote_data,
                                int N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < N) {
-        // 直接读取远程 GPU (remote_data) 的数据
-        // 这一行代码会触发通过 NVLink/PCIe 的远程 Read 事务
+        // 直接讀取遠端 GPU (remote_data) 的資料
+        // 這一行程式碼會觸發透過 NVLink/PCIe 的遠端 Read 事務
         local_data[idx] += remote_data[idx];
     }
 }
 
-// Host 端调用
+// Host 端呼叫
 void launch_p2p_kernel(float* d_ptr0, float* d_ptr1, int N, cudaStream_t stream) {
-    // 假设已开启 P2P 访问
+    // 假設已開啟 P2P 訪問
     cudaSetDevice(gpuid0);
 
-    // d_ptr1 是 GPU 1 上的指针
-    // 得益于 UVA，GPU 0 的 Kernel 可以直接使用该指针
+    // d_ptr1 是 GPU 1 上的指標
+    // 得益於 UVA，GPU 0 的 Kernel 可以直接使用該指標
     int threads = 256;
     int blocks = (N + threads - 1) / threads;
 
@@ -249,66 +249,66 @@ void launch_p2p_kernel(float* d_ptr0, float* d_ptr1, int N, cudaStream_t stream)
 
 ---
 
-## 5. 性能考量与注意事项
+## 5. 效能考量與注意事項
 
-在实际部署 GPUDirect P2P 时，为了获得理论峰值带宽并避免潜在的性能陷阱，需要重点关注硬件拓扑、PCIe 配置及编程模型限制。
+在實際部署 GPUDirect P2P 時，為了獲得理論峰值頻寬並避免潛在的效能陷阱，需要重點關注硬體拓撲、PCIe 配置及程式設計模型限制。
 
-### 5.1 硬件拓扑与 NUMA 亲和性
+### 5.1 硬體拓撲與 NUMA 親和性
 
-硬件连接方式直接决定了 P2P 的性能上限。
+硬體連線方式直接決定了 P2P 的性能上限。
 
-- **拓扑检测**：使用 `nvidia-smi topo -m` 查看矩阵。
-  - **最佳路径 (`NV#`)**：通过 NVLink 连接，提供最高带宽（如 H100 上单向 450GB/s）和最低延迟。
-  - **次优路径 (`PIX`)**：通过同一 PCIe Switch 连接。支持全速 PCIe P2P，但受限于 PCIe 代数（Gen4/Gen5）带宽。
-  - **良好路径 (`PXB`)**：穿越多个 PCIe Bridge/Switch，但不经过 PCIe Host Bridge。支持 GPUDirect P2P，延迟低。
-  - **一般路径 (`PHB`)**：经由 CPU Root Complex（同 CPU Socket，不同 Root Port）。P2P 支持视平台而定，延迟中等，带宽受 RC 共享限制。
-  - **受限路径 (`NODE`)**：同 Socket 内跨 PCIe Host Bridge（同 NUMA Node，不同 PHB）。P2P 支持视平台而定，需内核 allowlist。
-  - **不可用路径 (`SYS`)**：跨 NUMA Node / CPU Socket，数据经过 CPU 间互连总线（UPI/IF）。不支持 GPUDirect P2P，延迟高、带宽受限。
-- **NUMA 亲和性**：务必将控制 GPU 的 CPU 线程绑定到与该 GPU 最近的 NUMA 节点，以减少控制路径的延迟。
+- **拓撲檢測**：使用 `nvidia-smi topo -m` 檢視矩陣。
+  - **最佳路徑 (`NV#`)**：透過 NVLink 連線，提供最高頻寬（如 H100 上單向 450GB/s）和最低延遲。
+  - **次優路徑 (`PIX`)**：透過同一 PCIe Switch 連線。支持全速 PCIe P2P，但受限於 PCIe 代數（Gen4/Gen5）頻寬。
+  - **良好路徑 (`PXB`)**：穿越多個 PCIe Bridge/Switch，但不經過 PCIe Host Bridge。支持 GPUDirect P2P，延遲低。
+  - **一般路徑 (`PHB`)**：經由 CPU Root Complex（同 CPU Socket，不同 Root Port）。P2P 支援視平台而定，延遲中等，頻寬受 RC 共享限制。
+  - **受限路徑 (`NODE`)**：同 Socket 內跨 PCIe Host Bridge（同 NUMA Node，不同 PHB）。P2P 支援視平台而定，需核心 allowlist。
+  - **不可用路徑 (`SYS`)**：跨 NUMA Node / CPU Socket，資料經過 CPU 間互連匯流排（UPI/IF）。不支持 GPUDirect P2P，延遲高、頻寬受限。
+- **NUMA 親和性**：務必將控制 GPU 的 CPU 執行緒繫結到與該 GPU 最近的 NUMA 節點，以減少控制路徑的延遲。
 
-### 5.2 PCIe ACS (Access Control Services) 瓶颈
+### 5.2 PCIe ACS (Access Control Services) 瓶頸
 
-在纯 PCIe 环境中，ACS 是影响 P2P 性能的常见隐形杀手。
+在純 PCIe 環境中，ACS 是影響 P2P 效能的常見隱形殺手。
 
-- **问题现象**：如果 PCIe Switch 开启了 ACS 转发隔离（通常为了虚拟化安全），P2P TLP 可能会被禁止直接转发，被迫路由到 Root Complex 再折回（P2P over Root Complex）。
-- **性能影响**：这会导致有效带宽减半，并大幅增加延迟。
-- **解决方案**：在裸机（Bare Metal）高性能计算环境中，应在 BIOS 或操作系统层面禁用 PCIe Switch 下行端口的 ACS 转发限制。
+- **問題現象**：如果 PCIe Switch 開啟了 ACS 轉發隔離（通常為了虛擬化安全），P2P TLP 可能會被禁止直接轉發，被迫路由到 Root Complex 再折回（P2P over Root Complex）。
+- **效能影響**：這會導致有效頻寬減半，並大幅增加延遲。
+- **解決方案**：在裸機（Bare Metal）高效能運算環境中，應在 BIOS 或作業系統層面禁用 PCIe Switch 下行端口的 ACS 轉發限制。
 
-### 5.3 原子操作 (Atomic Operations) 的非对称性
+### 5.3 原子操作 (Atomic Operations) 的非對稱性
 
-PCIe 和 NVLink 对原子操作的支持存在本质差异：
+PCIe 和 NVLink 對原子操作的支援存在本質差異：
 
-- **NVLink**：原生支持所有 CUDA 原子操作（如 `atomicAdd`, `atomicCAS`），硬件一致性保证了远程原子操作的高性能。
-- **PCIe**：GPUDirect P2P over PCIe 对原子操作支持有限。通常不支持远程原子操作，或者性能极低（因为需要锁定总线或回退到 Host 处理）。
-- **建议**：在使用 PCIe P2P 时，避免对远程内存执行频繁的原子操作；应先将数据拉取到本地（Register/Shared Memory）计算后再写回。
+- **NVLink**：原生支持所有 CUDA 原子操作（如 `atomicAdd`, `atomicCAS`），硬體一致性保證了遠端原子操作的高效能。
+- **PCIe**：GPUDirect P2P over PCIe 對原子操作支援有限。通常不支援遠端原子操作，或者效能極低（因為需要鎖定匯流排或回退到 Host 處理）。
+- **建議**：在使用 PCIe P2P 時，避免對遠端記憶體執行頻繁的原子操作；應先將資料拉取到本地（Register/Shared Memory）計算後再寫回。
 
-### 5.4 系统级优化
+### 5.4 系統級最佳化
 
-- **IOMMU 开销**：虽然 P2P 绕过了 CPU 数据拷贝，但 IOMMU 的地址翻译（IOTLB Miss）仍可能引入开销。在可信集群环境中，通常建议开启 PCIe Passthrough 或使用 `iommu=pt` (Passthrough) 模式。
-- **Unified Memory**：使用 `cudaMallocManaged` 分配的统一内存也会利用 P2P 机制。当 `cudaDeviceEnablePeerAccess` 激活时，Driver 会优先使用 P2P 链路处理缺页（Page Fault）和预取。
-
----
-
-## 6. 总结
-
-GPUDirect P2P 的价值可以归结为一条：GPU 间的数据不再落在系统内存。要拿到这条路径的性能，三件事要同时成立：`cudaDeviceCanAccessPeer` 返回 1、拓扑在 PIX/PXB/NV# 级别、ACS 与 IOMMU 没有把流量重定向回 Root Complex。任何一件不满足，都会退回 CPU 中转或共享带宽的路径。
-
-节点内的这条路径在跨节点场景由 [GPUDirect RDMA](./01_gpudirect_technology.md#2-gpudirect-rdma-技术) 延续：NIC 直接读写远端 GPU 显存，CPU 中转同样被移出数据路径。
+- **IOMMU 開銷**：雖然 P2P 繞過了 CPU 資料複製，但 IOMMU 的地址翻譯（IOTLB Miss）仍可能引入開銷。在可信叢集環境中，通常建議開啟 PCIe Passthrough 或使用 `iommu=pt` (Passthrough) 模式。
+- **Unified Memory**：使用 `cudaMallocManaged` 分配的統一記憶體也會利用 P2P 機制。當 `cudaDeviceEnablePeerAccess` 激活時，Driver 會優先使用 P2P 鏈路處理缺頁（Page Fault）和預取。
 
 ---
 
-## 7. 参考资料
+## 6. 總結
+
+GPUDirect P2P 的價值可以歸結為一條：GPU 間的資料不再落在系統記憶體。要拿到這條路徑的效能，三件事要同時成立：`cudaDeviceCanAccessPeer` 返回 1、拓撲在 PIX/PXB/NV# 級別、ACS 與 IOMMU 沒有把流量重定向回 Root Complex。任何一件不滿足，都會退回 CPU 中轉或共享頻寬的路徑。
+
+節點內的這條路徑在跨節點場景由 [GPUDirect RDMA](./01_gpudirect_technology.md#2-gpudirect-rdma-技術) 延續：NIC 直接讀寫遠端 GPU 顯存，CPU 中轉同樣被移出資料路徑。
+
+---
+
+## 7. 參考資料
 
 - **CUDA C++ Programming Guide**: [Peer Device Memory Access](https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#peer-device-memory-access)  
-  官方编程指南，详细解释了 UVA、P2P 寻址和内存一致性模型。
+  官方程式設計指南，詳細解釋了 UVA、P2P 定址和記憶體一致性模型。
 - **官方 Sample**: [simpleP2P](https://github.com/NVIDIA/cuda-samples/tree/master/cpp/0_Introduction/simpleP2P)  
-  可编译运行的 P2P 带宽验证程序，输出 `cudaDeviceCanAccessPeer` 结果与双向带宽，本文 API 流程的官方对照实现。
+  可編譯執行的 P2P 頻寬驗證程式，輸出 `cudaDeviceCanAccessPeer` 結果與雙向頻寬，本文 API 流程的官方對照實現。
 - **CUDA Runtime API Reference**: [Peer Device Memory Access](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__PEER.html)  
-  API 文档，包含 `cudaDeviceEnablePeerAccess` 和 `cudaMemcpyPeer` 的详细参数说明。
+  API 文件，包含 `cudaDeviceEnablePeerAccess` 和 `cudaMemcpyPeer` 的詳細參數說明。
 - **NVIDIA Developer Blog**: [Peer-to-Peer & Unified Virtual Addressing](https://developer.nvidia.com/blog/cuda-pro-tip-always-set-current-device-avoid-multithreading-bugs/)  
-  虽然是一篇关于设置设备最佳实践的博客，但其中深入探讨了 UVA 和 P2P 上下文的重要性。
+  雖然是一篇關於設定裝置最佳實踐的部落格，但其中深入探討了 UVA 和 P2P 上下文的重要性。
 - **NVIDIA GPUDirect Overview**: [GPUDirect Technology](https://developer.nvidia.com/gpudirect)  
-  GPUDirect 技术家族的总览页面。
-- [GPU 间数据传输方法实测](../../02_gpu_programming/04_profiling/09_gpu_transfer_methods.md)：P2P 249 GB/s vs CPU 中转 12 GB/s A100 实测对比
-- [GPU 间数据传输 Benchmark](../../02_gpu_programming/04_profiling/code/09_gpu_transfer_methods.cu)：可编译运行的 P2P 带宽验证代码
-- [Multi-GPU CUDA 编程](../../02_gpu_programming/02_cuda/15_multi_gpu_programming.md)：P2P/NCCL/拓扑感知的完整编程指南
+  GPUDirect 技術家族的總覽頁面。
+- [GPU 間資料傳輸方法實測](../../02_gpu_programming/04_profiling/09_gpu_transfer_methods.md)：P2P 249 GB/s vs CPU 中轉 12 GB/s A100 實測對比
+- [GPU 間資料傳輸 Benchmark](../../02_gpu_programming/04_profiling/code/09_gpu_transfer_methods.cu)：可編譯執行的 P2P 頻寬驗證程式碼
+- [Multi-GPU CUDA 程式設計](../../02_gpu_programming/02_cuda/15_multi_gpu_programming.md)：P2P/NCCL/拓撲感知的完整程式設計指南

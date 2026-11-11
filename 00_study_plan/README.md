@@ -57,6 +57,7 @@
 
 ## 與上游的關係
 
-- 上游內容（`01_` ～ `99_` 目錄）不改寫；本層只新增 `00_study_plan/` 與 `.claude/skills/`，並在 [CLAUDE.md](../CLAUDE.md) 加一節說明。
+- 上游內容（`01_` ～ `99_` 目錄）不改寫內容；本層新增 `00_study_plan/` 與 `.claude/skills/`，並在 [CLAUDE.md](../CLAUDE.md) 加一節說明。
+- **例外：課綱指定的 109 篇文章已轉成繁體（台灣用語）**，用 [tools/to_traditional.py](tools/to_traditional.py) 逐行轉換：行數不變（`file:line` 仍有效），檔名、連結路徑、網址不轉。「显存」「网卡」「参数」「实例」「台」等詞有例外表，避免轉成「視訊記憶體」「網絡卡」「引數」「例項」「臺」。其他文章仍是簡體。
 - 若上游更新導致 K 點的 `file:line` 失效，跑 `python3 .claude/skills/course-handout-builder/scripts/check_handout.py <講義>` 會報錯，依報錯修行號即可。
-- 同步上游：`git fetch upstream && git merge upstream/main`，衝突只會出現在 `README.md` 與 `CLAUDE.md` 的新增段落。
+- 同步上游：`git fetch upstream && git merge -X theirs upstream/main`（已轉繁體的文章一律先收上游版本），接著跑 `pip install opencc-python-reimplemented && python3 00_study_plan/tools/to_traditional.py` 重新轉換；`README.md` 與 `CLAUDE.md` 的新增段落需手動確認。

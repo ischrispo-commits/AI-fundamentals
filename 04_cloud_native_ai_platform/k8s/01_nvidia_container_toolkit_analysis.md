@@ -1,123 +1,123 @@
-# NVIDIA Container Toolkit 原理分析与代码深度解析
+# NVIDIA Container Toolkit 原理分析與程式碼深度解析
 
-> 代码地址：<https://github.com/NVIDIA/nvidia-container-toolkit>
+> 程式碼地址：<https://github.com/NVIDIA/nvidia-container-toolkit>
 >
-> 官方文档地址：<https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/index.html>
+> 官方文件地址：<https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/index.html>
 
-## 1. 引言与背景
+## 1. 引言與背景
 
-### 1.1 容器化技术与 GPU 计算的融合
+### 1.1 容器化技術與 GPU 計算的融合
 
-随着人工智能、机器学习和高性能计算的快速发展，`GPU` 计算已成为现代计算基础设施的重要组成部分。从深度学习训练到科学计算，从图形渲染到加密货币挖矿，`GPU` 的并行计算能力为各种计算密集型任务提供了强大的支持。
+隨著人工智慧、機器學習和高效能運算的快速發展，`GPU` 計算已成為現代計算基礎設施的重要組成部分。從深度學習訓練到科學計算，從圖形渲染到加密貨幣挖礦，`GPU` 的平行計算能力為各種計算密集型任務提供了強大的支援。
 
-然而，传统的容器技术在设计之初并未考虑 `GPU` 等专用硬件的支持。容器技术的核心理念是通过 `Linux` 命名空间（`namespaces`）和控制组（`cgroups`）实现进程隔离和资源限制，但这些机制主要针对 `CPU`、内存、网络等通用资源，对于 `GPU` 这类特殊硬件设备的管理存在天然的局限性。
+然而，傳統的容器技術在設計之初並未考慮 `GPU` 等專用硬體的支援。容器技術的核心理念是透過 `Linux` 名稱空間（`namespaces`）和控制組（`cgroups`）實現行程隔離和資源限制，但這些機制主要針對 `CPU`、記憶體、網路等通用資源，對於 `GPU` 這類特殊硬體裝置的管理存在天然的侷限性。
 
-### 1.2 GPU 容器化面临的技术挑战
+### 1.2 GPU 容器化面臨的技術挑戰
 
-在容器环境中使用 `GPU` 主要面临以下技术挑战：
+在容器環境中使用 `GPU` 主要面臨以下技術挑戰：
 
-#### 1.2.1 设备隔离与访问控制
+#### 1.2.1 裝置隔離與訪問控制
 
-**挑战描述**：容器需要安全地访问 `GPU` 设备，同时保持与宿主机和其他容器的隔离性。
+**挑戰描述**：容器需要安全地訪問 `GPU` 裝置，同時保持與宿主機和其他容器的隔離性。
 
-**技术难点**：
+**技術難點**：
 
-- **`GPU` 设备文件（如 `/dev/nvidia0`）的安全挂载**：确保容器只能访问其分配的 `GPU` 设备，防止恶意容器访问宿主机的 `GPU` 资源。
-- **设备权限的精确控制**：通过 `Linux` 的权限机制（如 `chmod`、`chown`）精确控制对 `GPU` 设备文件的访问权限。
-- **多容器间的 `GPU` 资源隔离**：通过 `cgroups` 等机制，确保每个容器只能访问其分配的 `GPU` 资源，防止资源冲突。
+- **`GPU` 裝置檔案（如 `/dev/nvidia0`）的安全掛載**：確保容器只能訪問其分配的 `GPU` 裝置，防止惡意容器訪問宿主機的 `GPU` 資源。
+- **裝置許可權的精確控制**：透過 `Linux` 的許可權機制（如 `chmod`、`chown`）精確控制對 `GPU` 裝置檔案的訪問許可權。
+- **多容器間的 `GPU` 資源隔離**：透過 `cgroups` 等機制，確保每個容器只能訪問其分配的 `GPU` 資源，防止資源衝突。
 
-#### 1.2.2 驱动程序依赖
+#### 1.2.2 驅動程式依賴
 
-**挑战描述**：`GPU` 应用需要特定版本的驱动程序和运行时库，这些组件通常安装在宿主机上。
+**挑戰描述**：`GPU` 應用需要特定版本的驅動程式和執行時庫，這些元件通常安裝在宿主機上。
 
-**技术难点**：
+**技術難點**：
 
-- **驱动程序版本兼容性管理**：确保不同容器运行的应用程序与宿主机上安装的驱动程序版本兼容，避免版本冲突导致的运行时错误。
-- **运行时库的动态链接**：容器内的应用程序需要能够动态链接宿主机上的运行时库，确保在容器环境中正常运行。
-- **不同 `CUDA` 版本的共存问题**：在同一个宿主机上安装多个不同版本的 `CUDA` 驱动程序时，需要解决版本冲突和兼容性问题。
+- **驅動程式版本相容性管理**：確保不同容器執行的應用程式與宿主機上安裝的驅動程式版本相容，避免版本衝突導致的執行時錯誤。
+- **執行時庫的動態連結**：容器內的應用程式需要能夠動態連結宿主機上的執行時庫，確保在容器環境中正常執行。
+- **不同 `CUDA` 版本的共存問題**：在同一個宿主機上安裝多個不同版本的 `CUDA` 驅動程式時，需要解決版本衝突和相容性問題。
 
-#### 1.2.3 资源管理与调度
+#### 1.2.3 資源管理與排程
 
-**挑战描述**：多个容器之间的 `GPU` 资源分配和调度需要精确的管理机制。
+**挑戰描述**：多個容器之間的 `GPU` 資源分配和排程需要精確的管理機制。
 
-**技术难点**：
+**技術難點**：
 
-- **`GPU` 内存的分配与回收**：每个容器只能访问其分配的 `GPU` 内存，防止资源冲突。
-- **计算资源的公平调度**：确保所有容器都能获得公平的 `GPU` 资源分配，避免资源浪费。
-- **`GPU` 利用率的监控与优化**：实时监控 `GPU` 利用率，动态调整资源分配，提高资源利用率。
+- **`GPU` 記憶體的分配與回收**：每個容器只能訪問其分配的 `GPU` 記憶體，防止資源衝突。
+- **計算資源的公平排程**：確保所有容器都能獲得公平的 `GPU` 資源分配，避免資源浪費。
+- **`GPU` 利用率的監控與最佳化**：實時監控 `GPU` 利用率，動態調整資源分配，提高資源利用率。
 
-#### 1.2.4 兼容性问题
+#### 1.2.4 相容性問題
 
-**挑战描述**：不同容器运行时和编排系统对 `GPU` 支持的差异性。
+**挑戰描述**：不同容器執行時和編排系統對 `GPU` 支援的差異性。
 
-**技术难点**：
+**技術難點**：
 
-- **`Docker`、`containerd`、`CRI-O` 等运行时的适配**：确保 `NVIDIA Container Toolkit` 能够与不同的容器运行时（如 `Docker`、`containerd`、`CRI-O`）无缝集成，提供一致的 `GPU` 支持。
-- **`Kubernetes` 等编排系统的集成**：通过 `CDI` (Container Device Interface) 规范，实现与不同编排系统（如 `Kubernetes`）的深度集成，确保容器能够正确发现和使用 `GPU` 设备。
-- **`OCI` 规范的扩展与兼容**：符合 `OCI` (`Open Container Initiative`) 规范，确保容器镜像的可移植性和兼容性，避免因规范不兼容导致的运行时错误。
-- **`CDI` 规范的实现**：`NVIDIA Container Toolkit` 采用 `CDI` 规范，与 `Kubernetes` 等编排系统无缝集成，提供一致的 `GPU` 支持。
-- **`MIG` (Multi-Instance GPU) 支持**：`NVIDIA Container Toolkit` 支持 `MIG` 设备，实现多实例 `GPU` 的容器化部署。
+- **`Docker`、`containerd`、`CRI-O` 等執行時的適配**：確保 `NVIDIA Container Toolkit` 能夠與不同的容器執行時（如 `Docker`、`containerd`、`CRI-O`）無縫整合，提供一致的 `GPU` 支持。
+- **`Kubernetes` 等編排系統的整合**：透過 `CDI` (Container Device Interface) 規範，實現與不同編排系統（如 `Kubernetes`）的深度集成，確保容器能夠正確發現和使用 `GPU` 裝置。
+- **`OCI` 規範的擴展與相容**：符合 `OCI` (`Open Container Initiative`) 規範，確保容器映象的可移植性和相容性，避免因規範不相容導致的執行時錯誤。
+- **`CDI` 規範的實現**：`NVIDIA Container Toolkit` 采用 `CDI` 規範，與 `Kubernetes` 等編排系統無縫整合，提供一致的 `GPU` 支持。
+- **`MIG` (Multi-Instance GPU) 支持**：`NVIDIA Container Toolkit` 支持 `MIG` 裝置，實現多實例 `GPU` 的容器化部署。
 
-#### 1.2.5 性能开销
+#### 1.2.5 效能開銷
 
-**挑战描述**：容器化可能引入的性能损失需要最小化。
+**挑戰描述**：容器化可能引入的效能損失需要最小化。
 
-**技术难点**：
+**技術難點**：
 
-- **`GPU` 设备访问的延迟优化**：通过 `PCIe` 直接访问 `GPU`，减少 `CPU` 到 `GPU` 的通信延迟。
-- **内存拷贝开销的减少**：利用 `GPU` 的内存复制引擎，减少数据在 `CPU` 和 `GPU` 之间的拷贝开销。
-- **系统调用的优化**：通过 `NVIDIA Container Toolkit` 提供的 `OCI` 运行时 Shim，减少容器启动时的系统调用次数。
+- **`GPU` 裝置訪問的延遲最佳化**：透過 `PCIe` 直接訪問 `GPU`，減少 `CPU` 到 `GPU` 的通訊延遲。
+- **記憶體複製開銷的減少**：利用 `GPU` 的記憶體複製引擎，減少資料在 `CPU` 和 `GPU` 之間的複製開銷。
+- **系統呼叫的最佳化**：透過 `NVIDIA Container Toolkit` 提供的 `OCI` 執行時 Shim，減少容器啟動時的系統呼叫次數。
 
-### 1.3 NVIDIA Container Toolkit 的诞生
+### 1.3 NVIDIA Container Toolkit 的誕生
 
 #### 1.3.1 发展历程
 
-`NVIDIA Container Toolkit` 的发展经历了多个阶段：
+`NVIDIA Container Toolkit` 的發展經歷了多個階段：
 
-1. **nvidia-docker v1 (2016)**：最初的解决方案，通过包装 `Docker` 命令实现 `GPU` 支持
-2. **nvidia-docker v2 (2018)**：引入 `nvidia-container-runtime`，实现了与 `Docker` 的深度集成
-3. **`NVIDIA Container Toolkit` (2019-至今)**：统一的工具集，支持多种容器运行时和编排系统
+1. **nvidia-docker v1 (2016)**：最初的解決方案，透過包裝 `Docker` 命令實現 `GPU` 支持
+2. **nvidia-docker v2 (2018)**：引入 `nvidia-container-runtime`，實現了與 `Docker` 的深度集成
+3. **`NVIDIA Container Toolkit` (2019-至今)**：統一的工具集，支援多種容器執行時和編排系統
 
-#### 1.3.2 设计理念
+#### 1.3.2 設計理念
 
-`NVIDIA Container Toolkit` 采用以下设计理念：
+`NVIDIA Container Toolkit` 採用以下設計理念：
 
-**标准化**：基于 `OCI` (Open Container Initiative) 规范，确保与各种容器运行时的兼容性。
+**標準化**：基於 `OCI` (Open Container Initiative) 規範，確保與各種容器執行時的相容性。
 
-**模块化**：采用分层架构，各组件职责明确，便于维护和扩展。
+**模組化**：採用分層架構，各元件職責明確，便於維護和擴展。
 
-**透明性**：对用户和应用程序透明，无需修改现有代码即可在容器中使用 `GPU`。
+**透明性**：對使用者和應用程式透明，無需修改現有程式碼即可在容器中使用 `GPU`。
 
-**安全性**：严格的权限控制和设备隔离，确保容器安全。
+**安全性**：嚴格的許可權控制和裝置隔離，確保容器安全。
 
-#### 1.3.3 核心价值
+#### 1.3.3 核心價值
 
-`NVIDIA Container Toolkit` 为容器化 `GPU` 计算提供了以下核心价值：
+`NVIDIA Container Toolkit` 為容器化 `GPU` 計算提供了以下核心價值：
 
-1. **简化部署**：一键式安装和配置，降低部署复杂度
-2. **提高可移植性**：容器镜像可在不同环境间无缝迁移
-3. **增强安全性**：细粒度的权限控制和资源隔离
-4. **优化性能**：接近原生的 `GPU` 性能表现
-5. **生态兼容**：与主流容器技术栈的深度集成
+1. **簡化部署**：一鍵式安裝和配置，降低部署複雜度
+2. **提高可移植性**：容器映象可在不同環境間無縫遷移
+3. **增強安全性**：細粒度的許可權控制和資源隔離
+4. **最佳化效能**：接近原生的 `GPU` 效能表現
+5. **生態相容**：與主流容器技術棧的深度整合
 
-### 1.4 技术架构预览
+### 1.4 技術架構預覽
 
-`NVIDIA Container Toolkit` 采用分层架构设计，从底层到上层包括：
+`NVIDIA Container Toolkit` 採用分層架構設計，從底層到上層包括：
 
-- **硬件抽象层**：`libnvidia-container` 提供底层 `GPU` 设备管理
-- **运行时集成层**：`nvidia-container-runtime` 实现与 `OCI` 运行时的集成
-- **工具链层**：`nvidia-ctk` 等工具提供配置管理和设备发现功能
-- **接口标准层**：支持 `CDI` 等标准化设备接口
+- **硬體抽象層**：`libnvidia-container` 提供底層 `GPU` 裝置管理
+- **執行時整合層**：`nvidia-container-runtime` 實現與 `OCI` 執行時的整合
+- **工具鏈層**：`nvidia-ctk` 等工具提供配置管理和裝置發現功能
+- **介面標準層**：支持 `CDI` 等標準化裝置介面
 
-这种架构设计确保了系统的可扩展性、可维护性和跨平台兼容性，为容器化 `GPU` 计算提供了坚实的技术基础。
+這種架構設計確保了系統的可擴展性、可維護性和跨平台相容性，為容器化 `GPU` 計算提供了堅實的技術基礎。
 
 ---
 
-## 2. NVIDIA Container Toolkit架构概览
+## 2. NVIDIA Container Toolkit架構概覽
 
-### 2.1 整体架构设计
+### 2.1 整體架構設計
 
-`NVIDIA Container Toolkit` 采用分层架构设计，主要包含以下核心组件：
+`NVIDIA Container Toolkit` 採用分層架構設計，主要包含以下核心元件：
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -137,43 +137,43 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 核心组件功能概述
+### 2.2 核心元件功能概述
 
-根据官方文档和代码结构，`NVIDIA Container Toolkit` 包含以下核心组件：
+根據官方文件和程式碼結構，`NVIDIA Container Toolkit` 包含以下核心元件：
 
-1. **nvidia-container-runtime**：`OCI` 兼容的运行时 `shim`，负责拦截和修改容器创建请求
-2. **nvidia-ctk** (v1.10.0+)：NVIDIA Container Toolkit CLI，提供配置管理和 `CDI` 规范生成功能（版本号核对日 2026-11-05，官方 changelog 口径）
-3. **nvidia-cdi-hook**：`CDI` 钩子程序，处理 `CDI` 规范的运行时钩子操作
-4. **nvidia-container-runtime-hook**：传统运行时钩子，用于 `Legacy` 模式的容器修改
+1. **nvidia-container-runtime**：`OCI` 相容的執行時 `shim`，負責攔截和修改容器建立請求
+2. **nvidia-ctk** (v1.10.0+)：NVIDIA Container Toolkit CLI，提供配置管理和 `CDI` 規範生成功能（版本號核對日 2026-11-05，官方 changelog 口徑）
+3. **nvidia-cdi-hook**：`CDI` 鉤子程式，處理 `CDI` 規範的執行時鉤子操作
+4. **nvidia-container-runtime-hook**：傳統執行時鉤子，用於 `Legacy` 模式的容器修改
 5. **nvidia-container-cli**：容器 CLI 工具，由 `libnvidia-container` 提供
-6. **libnvidia-container1**：底层 `C` 库，负责 `GPU` 设备的发现和管理
+6. **libnvidia-container1**：底層 `C` 庫，負責 `GPU` 裝置的發現和管理
 
-> **组件说明**：
+> **元件說明**：
 >
-> - **nvidia-container-toolkit**：这是整个工具包的名称，而非单独的可执行文件
-> - **nvidia-ctk**：实际的命令行工具可执行文件
-> - **nvidia-cdi-hook**：专门处理 `CDI` 规范的钩子程序
-> - **nvidia-container-runtime-hook**：传统的运行时钩子程序
+> - **nvidia-container-toolkit**：這是整個工具包的名稱，而非單獨的可執行檔案
+> - **nvidia-ctk**：實際的命令列工具可執行檔案
+> - **nvidia-cdi-hook**：專門處理 `CDI` 規範的鉤子程式
+> - **nvidia-container-runtime-hook**：傳統的執行時鉤子程式
 >
-> **版本演进**（依据官方 changelog，核对日 2026-11-05）：
+> **版本演進**（依據官方 changelog，核對日 2026-11-05）：
 >
-> - **v1.10.0-rc.1 起**：`nvidia-ctk` CLI 被收进安装包（changelog 条目 "Include nvidia-ctk CLI in installed binaries"）
-> - **v1.12.0 起**：提供 `CDI` 规范生成能力（初版为 `nvidia-ctk info generate-cdi`，rc.2 起定名 `nvidia-ctk cdi generate`）
-> - **v1.16.0-rc.1 起**：`nvidia-ctk hook` 子命令迁移为独立的 `nvidia-cdi-hook` 程序
+> - **v1.10.0-rc.1 起**：`nvidia-ctk` CLI 被收進安裝包（changelog 條目 "Include nvidia-ctk CLI in installed binaries"）
+> - **v1.12.0 起**：提供 `CDI` 規範生成能力（初版為 `nvidia-ctk info generate-cdi`，rc.2 起定名 `nvidia-ctk cdi generate`）
+> - **v1.16.0-rc.1 起**：`nvidia-ctk hook` 子命令遷移為獨立的 `nvidia-cdi-hook` 程序
 
-### 2.3 包管理与依赖关系
+### 2.3 包管理與依賴關係
 
-#### 2.3.1 主要软件包
+#### 2.3.1 主要軟體包
 
-根据代码中的包管理配置，`NVIDIA Container Toolkit` 主要包含以下软件包：
+根據程式碼中的包管理配置，`NVIDIA Container Toolkit` 主要包含以下軟體包：
 
-- **nvidia-container-toolkit**：主包，包含所有核心功能和可执行文件
-- **nvidia-container-toolkit-base**：基础包，包含运行时和 CLI 工具的最小集合
-- **nvidia-container-toolkit-operator-extensions**：操作员扩展包（通常不发布）
+- **nvidia-container-toolkit**：主包，包含所有核心功能和可執行檔案
+- **nvidia-container-toolkit-base**：基礎包，包含執行時和 CLI 工具的最小集合
+- **nvidia-container-toolkit-operator-extensions**：操作員擴展包（通常不发布）
 - **libnvidia-container-tools**：工具包，包含 `nvidia-container-cli`
-- **libnvidia-container1**：核心库包，提供底层 C 库
+- **libnvidia-container1**：核心庫包，提供底層 C 庫
 
-#### 2.3.2 包依赖关系
+#### 2.3.2 包依賴關係
 
 ```text
 ├─ nvidia-container-toolkit (version)
@@ -184,53 +184,53 @@
 └─ libnvidia-container1 (version)
 ```
 
-**依赖关系说明**：
+**依賴關係說明**：
 
-- **nvidia-container-toolkit**：完整安装包，适用于所有使用场景
-- **nvidia-container-toolkit-base**：最小安装包，适用于仅使用 `CDI` 的环境
+- **nvidia-container-toolkit**：完整安裝包，適用於所有使用場景
+- **nvidia-container-toolkit-base**：最小安裝包，適用於僅使用 `CDI` 的環境
 - **libnvidia-container-tools**：提供 `nvidia-container-cli` 命令行工具
-- **libnvidia-container1**：核心库，所有其他组件的基础依赖
+- **libnvidia-container1**：核心庫，所有其他元件的基礎依賴
 
-#### 2.3.3 废弃包说明
+#### 2.3.3 廢棄包說明
 
-> **重要提示**：以下包已被废弃，功能已合并到`nvidia-container-toolkit`包中：
+> **重要提示**：以下包已被廢棄，功能已合併到`nvidia-container-toolkit`包中：
 >
-> - **nvidia-docker2**：已废弃，功能合并到主包
-> - **nvidia-container-runtime**：作为独立包已废弃，现在是`nvidia-container-toolkit`的一部分
-> - **nvidia-container-runtime-hook**：作为独立包已废弃，现在包含在主包中
+> - **nvidia-docker2**：已廢棄，功能合併到主包
+> - **nvidia-container-runtime**：作為獨立包已廢棄，現在是`nvidia-container-toolkit`的一部分
+> - **nvidia-container-runtime-hook**：作為獨立包已廢棄，現在包含在主包中
 >
-> 这些包可能仍然可用以确保向后兼容性，但建议使用`nvidia-container-toolkit`包。
+> 這些包可能仍然可用以確保向後相容性，但建議使用`nvidia-container-toolkit`包。
 >
-> **注意**：`nvidia-container-runtime`和`nvidia-container-runtime-hook`仍然作为可执行文件存在于`nvidia-container-toolkit`包中。
+> **注意**：`nvidia-container-runtime`和`nvidia-container-runtime-hook`仍然作為可執行檔案存在於`nvidia-container-toolkit`包中。
 
-#### 2.3.4 安装建议
+#### 2.3.4 安裝建議
 
-**推荐安装方式**：
+**推薦安裝方式**：
 
 ```bash
-# 完整安装（推荐）
+# 完整安裝（推薦）
 sudo apt-get install nvidia-container-toolkit
 
-# 最小安装（仅CDI场景）
+# 最小安裝（僅CDI場景）
 sudo apt-get install nvidia-container-toolkit-base
 ```
 
-**包选择指南**：
+**包選擇指南**：
 
-- **完整功能需求**：安装`nvidia-container-toolkit`
-- **仅CDI使用**：安装`nvidia-container-toolkit-base`
-- **开发调试**：安装`libnvidia-container-tools`
+- **完整功能需求**：安裝`nvidia-container-toolkit`
+- **僅CDI使用**：安裝`nvidia-container-toolkit-base`
+- **開發除錯**：安裝`libnvidia-container-tools`
 
 ### 2.4 工作流程概述
 
-当容器运行时创建一个需要GPU访问的容器时，`NVIDIA Container Toolkit`的工作流程如下：
+當容器執行時建立一個需要GPU訪問的容器時，`NVIDIA Container Toolkit`的工作流程如下：
 
-1. **容器运行时调用**：容器引擎 (Docker/containerd) 调用 `nvidia-container-runtime`
-2. **请求拦截与分析**：`nvidia-container-runtime` 检测到容器创建请求，解析 `GPU` 需求
-3. **设备发现**：通过 `libnvidia-container` 和 `NVML` 接口发现可用的 `GPU` 设备
-4. **资源收集**：收集必要的设备文件、库文件和驱动程序依赖
-5. **OCI 规范修改**：生成相应的 `OCI` 规范修改，包括设备挂载、环境变量等
-6. **运行时传递**：将修改后的规范传递给底层运行时（如 `runc`）
+1. **容器執行時呼叫**：容器引擎 (Docker/containerd) 呼叫 `nvidia-container-runtime`
+2. **請求攔截與分析**：`nvidia-container-runtime` 檢測到容器建立請求，解析 `GPU` 需求
+3. **裝置發現**：透過 `libnvidia-container` 和 `NVML` 介面發現可用的 `GPU` 裝置
+4. **資源收集**：收集必要的裝置檔案、庫檔案和驅動程式依賴
+5. **OCI 規範修改**：生成相應的 `OCI` 規範修改，包括裝置掛載、環境變數等
+6. **執行時傳遞**：將修改後的規範傳遞給底層執行時（如 `runc`）
 
 ```text
 Docker/containerd → nvidia-container-runtime → nvidia-container-toolkit
@@ -238,27 +238,27 @@ Docker/containerd → nvidia-container-runtime → nvidia-container-toolkit
                     runc ← OCI Spec (Modified) ← libnvidia-container
 ```
 
-> **详细执行流程**：第四章提供了完整的 `docker run --runtime=nvidia --gpus all` 执行示例，包含7个详细步骤的源码分析和组件交互时序图。
+> **詳細執行流程**：第四章提供了完整的 `docker run --runtime=nvidia --gpus all` 執行示例，包含7個詳細步驟的原始碼分析和元件互動時序圖。
 
 ---
 
-## 3. 核心组件深度解析
+## 3. 核心元件深度解析
 
-### 3.1 libnvidia-container1：底层设备管理
+### 3.1 libnvidia-container1：底層裝置管理
 
-#### 3.1.1 架构设计与职责
+#### 3.1.1 架構設計與職責
 
-`libnvidia-container1`（库包名）是整个工具链的基础组件，采用 C 语言实现，提供了 `GPU` **设备发现**、**驱动程序管理**和**容器环境配置**的核心功能。该库通过 `libnvidia-container-tools` 包提供 `nvidia-container-cli` 命令行工具。
+`libnvidia-container1`（庫包名）是整個工具鏈的基礎元件，采用 C 語言實現，提供了 `GPU` **裝置發現**、**驅動程式管理**和**容器環境配置**的核心功能。該庫透過 `libnvidia-container-tools` 包提供 `nvidia-container-cli` 命令行工具。
 
-#### 3.1.2 设备发现机制
+#### 3.1.2 裝置發現機制
 
-`libnvidia-container` 通过以下方式发现 `GPU` 设备：
+`libnvidia-container` 透過以下方式發現 `GPU` 裝置：
 
-1. **NVML 接口调用**：使用 `NVIDIA Management Library` 获取 `GPU` 信息
-2. **设备文件扫描**：扫描 `/dev` 目录下的 `GPU` 设备文件
-3. **驱动程序检测**：检测已安装的 `NVIDIA` 驱动程序版本
+1. **NVML 介面呼叫**：使用 `NVIDIA Management Library` 獲取 `GPU` 信息
+2. **裝置檔案掃描**：掃描 `/dev` 目錄下的 `GPU` 裝置檔案
+3. **驅動程式檢測**：檢測已安裝的 `NVIDIA` 驅動程式版本
 
-#### 3.1.3 关键数据结构
+#### 3.1.3 關鍵資料結構
 
 ```c
 struct nvc_context {
@@ -277,11 +277,11 @@ struct nvc_container {
 };
 ```
 
-### 3.2 nvidia-container-runtime：OCI运行时集成
+### 3.2 nvidia-container-runtime：OCI執行時整合
 
-#### 3.2.1 OCI规范兼容性
+#### 3.2.1 OCI規範相容性
 
-`nvidia-container-runtime` 作为 `OCI` 兼容的运行时 `shim`，实现了完整的 `OCI Runtime Specification`。其核心代码结构如下：
+`nvidia-container-runtime` 作為 `OCI` 相容的執行時 `shim`，實現了完整的 `OCI Runtime Specification`。其核心程式碼結構如下：
 
 ```go
 // internal/oci/runtime.go
@@ -297,9 +297,9 @@ type modifyingRuntimeWrapper struct {
 }
 ```
 
-#### 3.2.2 运行时修改机制
+#### 3.2.2 執行時修改機制
 
-当检测到容器创建请求时，`nvidia-container-runtime`会执行以下操作：
+當檢測到容器建立請求時，`nvidia-container-runtime`會執行以下操作：
 
 ```go
 // internal/oci/runtime_modifier.go
@@ -308,19 +308,19 @@ func (r modifyingRuntimeWrapper) Exec(args []string) error {
         return fmt.Errorf("no arguments specified")
     }
 
-    // 检测是否为create命令
+    // 檢測是否為create命令
     if args[0] == "create" {
         return r.modifyAndExec(args)
     }
 
-    // 其他命令直接传递给底层运行时
+    // 其他命令直接傳遞給底層執行時
     return r.runtime.Exec(args)
 }
 ```
 
 #### 3.2.3 配置管理
 
-`nvidia-container-runtime`通过配置文件`/etc/nvidia-container-runtime/config.toml`进行配置管理：
+`nvidia-container-runtime`透過配置檔案`/etc/nvidia-container-runtime/config.toml`進行配置管理：
 
 ```go
 // internal/config/config.go
@@ -338,13 +338,13 @@ type Config struct {
 }
 ```
 
-### 3.3 Container Device Interface (CDI) 实现
+### 3.3 Container Device Interface (CDI) 實現
 
-#### 3.3.1 CDI规范概述
+#### 3.3.1 CDI規範概述
 
-`Container Device Interface` (`CDI`) 是一个标准化的接口规范，用于在容器运行时中管理设备访问。`NVIDIA Container Toolkit` 通过 `CDI` 规范提供了标准化的 `GPU` 设备管理。
+`Container Device Interface` (`CDI`) 是一個標準化的介面規範，用於在容器執行時中管理裝置訪問。`NVIDIA Container Toolkit` 透過 `CDI` 規範提供了標準化的 `GPU` 裝置管理。
 
-#### 3.3.2 CDI修改器实现
+#### 3.3.2 CDI修改器實現
 
 ```go
 // internal/modifier/cdi.go
@@ -367,9 +367,9 @@ func NewCDIModifier(logger logger.Interface, cfg *config.Config, ociSpec oci.Spe
 }
 ```
 
-#### 3.3.3 CDI规范生成
+#### 3.3.3 CDI規範生成
 
-`nvidia-ctk` 工具提供了 `CDI` 规范生成功能：
+`nvidia-ctk` 工具提供了 `CDI` 規範生成功能：
 
 ```go
 // cmd/nvidia-ctk/cdi/cdi.go
@@ -386,11 +386,11 @@ func (m command) build() *cli.Command {
 }
 ```
 
-### 3.4 设备发现与编辑器系统
+### 3.4 裝置發現與編輯器系統
 
-#### 3.4.1 发现器接口设计
+#### 3.4.1 發現器介面設計
 
-`NVIDIA Container Toolkit` 采用了灵活的发现器模式，通过统一的接口发现各种类型的资源：
+`NVIDIA Container Toolkit` 採用了靈活的發現器模式，透過統一的介面發現各種類型的資源：
 
 ```go
 // internal/discover/discover.go
@@ -402,7 +402,7 @@ type Discover interface {
 }
 ```
 
-#### 3.4.2 复合发现器实现
+#### 3.4.2 複合發現器實現
 
 ```go
 // internal/discover/list.go
@@ -432,9 +432,9 @@ func (d list) Devices() ([]Device, error) {
 }
 ```
 
-#### 3.4.3 编辑器系统
+#### 3.4.3 編輯器系統
 
-编辑器系统负责将发现的资源转换为OCI规范修改：
+編輯器系統負責將發現的資源轉換為OCI規範修改：
 
 ```go
 // internal/edits/edits.go
@@ -460,55 +460,55 @@ func FromDiscoverer(d discover.Discover) (*cdi.ContainerEdits, error) {
     }
 
     c := NewContainerEdits()
-    // 处理各种资源类型...
+    // 處理各種資源類型...
     return c, nil
 }
 ```
 
 ---
 
-## 4. 工作流程详细分析
+## 4. 工作流程詳細分析
 
-### 4.1 完整执行流程示例
+### 4.1 完整執行流程示例
 
-为了更好地理解`NVIDIA Container Toolkit`的工作原理，我们通过一个完整的`docker run`例子来阐述整个执行过程。
+為了更好地理解`NVIDIA Container Toolkit`的工作原理，我們透過一個完整的`docker run`例子來闡述整個執行過程。
 
 #### 4.1.1 示例命令
 
-GPU 注入有两条互斥的入口路径，下面分开演示，不要在生产环境混用（两者同时指定时的组合行为官方文档没有说明）：
+GPU 注入有兩條互斥的入口路徑，下面分開演示，不要在生產環境混用（兩者同時指定時的組合行為官方文件沒有說明）：
 
 ```bash
-# 路径一：--gpus（Docker 19.03+ 语法，由 Docker 在构建容器 spec 时写入 NVIDIA_VISIBLE_DEVICES）
+# 路徑一：--gpus（Docker 19.03+ 語法，由 Docker 在構建容器 spec 時寫入 NVIDIA_VISIBLE_DEVICES）
 docker run --runtime=nvidia --gpus all \
   nvidia/cuda:11.8-runtime-ubuntu20.04 nvidia-smi
 ```
 
 ```bash
-# 路径二：runtime 注入路径，直接通过环境变量声明可见设备
+# 路徑二：runtime 注入路徑，直接透過環境變數宣告可見裝置
 docker run --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=0,1 \
   nvidia/cuda:11.8-runtime-ubuntu20.04 nvidia-smi
 ```
 
-#### 4.1.2 执行流程详细分析
+#### 4.1.2 執行流程詳細分析
 
-**步骤1：Docker 守护进程接收请求**:
+**步驟1：Docker 守護行程接收請求**:
 
-当用户执行上述命令时，`Docker` 守护进程首先解析命令参数：
+當使用者執行上述命令時，`Docker` 守護行程首先解析命令參數：
 
-- `--runtime=nvidia`：指定使用 `nvidia` 容器运行时
-- 路径一的 `--gpus all`：请求所有可用 `GPU` (`Docker` 19.03+ 语法)，由 Docker 转成对 GPU 的注入指令
-- 路径二的 `-e NVIDIA_VISIBLE_DEVICES=0,1`：环境变量指定使用 `GPU 0` 和 `1`
+- `--runtime=nvidia`：指定使用 `nvidia` 容器執行時
+- 路徑一的 `--gpus all`：請求所有可用 `GPU` (`Docker` 19.03+ 語法)，由 Docker 轉成對 GPU 的注入指令
+- 路徑二的 `-e NVIDIA_VISIBLE_DEVICES=0,1`：環境變數指定使用 `GPU 0` 和 `1`
 
-**步骤2：调用 nvidia-container-runtime**:
+**步驟2：呼叫 nvidia-container-runtime**:
 
-`Docker` 守护进程调用 `nvidia-container-runtime` 而不是默认的 `runc`：
+`Docker` 守護行程呼叫 `nvidia-container-runtime` 而不是預設的 `runc`：
 
 ```go
 // cmd/nvidia-container-runtime/main.go
 func main() {
     logger := logrus.New()
 
-    // 创建运行时包装器
+    // 建立執行時包裝器
     runtime, err := oci.NewModifyingRuntimeWrapper(
         logger,
         cfg,
@@ -519,7 +519,7 @@ func main() {
         os.Exit(1)
     }
 
-    // 执行运行时命令
+    // 執行執行時命令
     err = runtime.Exec(argv)
     if err != nil {
         logger.Errorf("Runtime execution failed: %v", err)
@@ -528,51 +528,51 @@ func main() {
 }
 ```
 
-**步骤3：OCI 规范修改**:
+**步驟3：OCI 規範修改**:
 
-`nvidia-container-runtime` 检测到这是一个 `create` 命令，开始修改 `OCI` 规范：
+`nvidia-container-runtime` 檢測到這是一個 `create` 命令，開始修改 `OCI` 規範：
 
 ```go
 // internal/oci/runtime_modifier.go
 func (r modifyingRuntimeWrapper) modifyAndExec(args []string) error {
-    // 解析OCI规范
+    // 解析OCI規範
     spec, err := r.loadSpec(bundlePath)
     if err != nil {
         return fmt.Errorf("failed to load OCI spec: %v", err)
     }
 
-    // 应用修改器
+    // 應用修改器
     err = r.modifier.Modify(spec)
     if err != nil {
         return fmt.Errorf("failed to modify OCI spec: %v", err)
     }
 
-    // 保存修改后的规范
+    // 儲存修改後的規範
     err = r.saveSpec(bundlePath, spec)
     if err != nil {
         return fmt.Errorf("failed to save modified spec: %v", err)
     }
 
-    // 调用底层运行时
+    // 呼叫底層執行時
     return r.runtime.Exec(args)
 }
 ```
 
-**步骤4：设备发现与资源收集**:
+**步驟4：裝置發現與資源收集**:
 
-系统通过 `libnvidia-container` 发现 `GPU` 设备和相关资源：
+系統透過 `libnvidia-container` 發現 `GPU` 裝置和相關資源：
 
 ```go
 // internal/discover/devices.go
 func (d *gpuDeviceDiscoverer) Devices() ([]Device, error) {
-    // 使用NVML库发现GPU设备
+    // 使用NVML庫發現GPU裝置
     nvmlLib := nvml.New()
     if ret := nvmlLib.Init(); ret != nvml.SUCCESS {
         return nil, fmt.Errorf("failed to initialize NVML: %v", ret)
     }
     defer nvmlLib.Shutdown()
 
-    // 获取GPU数量
+    // 獲取GPU數量
     count, ret := nvmlLib.DeviceGetCount()
     if ret != nvml.SUCCESS {
         return nil, fmt.Errorf("failed to get device count: %v", ret)
@@ -585,7 +585,7 @@ func (d *gpuDeviceDiscoverer) Devices() ([]Device, error) {
             continue
         }
 
-        // 创建设备条目
+        // 建立裝置條目
         deviceNode := fmt.Sprintf("/dev/nvidia%d", i)
         devices = append(devices, Device{
             HostPath:      deviceNode,
@@ -598,20 +598,20 @@ func (d *gpuDeviceDiscoverer) Devices() ([]Device, error) {
 }
 ```
 
-**步骤5：库文件和依赖发现**:
+**步驟5：庫檔案和依賴發現**:
 
-系统发现并收集必要的库文件：
+系統發現並收集必要的庫檔案：
 
 ```go
 // internal/discover/libraries.go
 func (d *libraryDiscoverer) Mounts() ([]Mount, error) {
-    // 发现CUDA运行时库
+    // 發現CUDA執行時庫
     libraries := []string{
         "libcuda.so.1",
         "libnvidia-ml.so.1",
         "libcudart.so.11.0",
         "libcublas.so.11",
-        // ... 更多库文件
+        // ... 更多庫檔案
     }
 
     var mounts []Mount
@@ -632,9 +632,9 @@ func (d *libraryDiscoverer) Mounts() ([]Mount, error) {
 }
 ```
 
-**步骤6：OCI 规范更新**:
+**步驟6：OCI 規範更新**:
 
-收集到的资源被添加到 `OCI` 规范中：
+收集到的資源被新增到 `OCI` 規範中：
 
 ```json
 {
@@ -687,11 +687,11 @@ func (d *libraryDiscoverer) Mounts() ([]Mount, error) {
 }
 ```
 
-**步骤7：容器创建与启动**:
+**步驟7：容器建立與啟動**:
 
-修改后的 `OCI` 规范被传递给底层运行时 (`runc`)，容器被创建并启动。容器内的 `nvidia-smi` 命令可以正常访问 `GPU` 设备。
+修改后的 `OCI` 規範被傳遞給底層執行時 (`runc`)，容器被建立並啟動。容器內的 `nvidia-smi` 命令可以正常訪問 `GPU` 裝置。
 
-#### 4.1.3 执行时序图
+#### 4.1.3 執行時序圖
 
 ```mermaid
 sequenceDiagram
@@ -704,23 +704,23 @@ sequenceDiagram
 
     User->>Docker: docker run --runtime=nvidia --gpus all
     Docker->>NVRuntime: create container
-    NVRuntime->>NVRuntime: 检测GPU请求
-    NVRuntime->>NVToolkit: 调用修改器
-    NVToolkit->>LibNV: 发现GPU设备
-    LibNV-->>NVToolkit: 返回设备信息
+    NVRuntime->>NVRuntime: 檢測GPU請求
+    NVRuntime->>NVToolkit: 呼叫修改器
+    NVToolkit->>LibNV: 發現GPU裝置
+    LibNV-->>NVToolkit: 返回裝置資訊
     NVToolkit->>NVToolkit: 生成OCI修改
-    NVToolkit-->>NVRuntime: 返回修改后规范
-    NVRuntime->>Runc: 创建容器
-    Runc-->>NVRuntime: 容器创建成功
-    NVRuntime-->>Docker: 返回结果
-    Docker-->>User: 容器运行
+    NVToolkit-->>NVRuntime: 返回修改後規範
+    NVRuntime->>Runc: 建立容器
+    Runc-->>NVRuntime: 容器建立成功
+    NVRuntime-->>Docker: 返回結果
+    Docker-->>User: 容器執行
 ```
 
-### 4.2 容器启动流程
+### 4.2 容器啟動流程
 
-#### 4.2.1 环境变量检测
+#### 4.2.1 環境變數檢測
 
-当容器启动时，`nvidia-container-runtime`首先检查环境变量`NVIDIA_VISIBLE_DEVICES`：
+當容器啟動時，`nvidia-container-runtime`首先檢查環境變數`NVIDIA_VISIBLE_DEVICES`：
 
 ```bash
 # 指定特定GPU
@@ -733,41 +733,41 @@ NVIDIA_VISIBLE_DEVICES=all
 NVIDIA_VISIBLE_DEVICES=void
 ```
 
-#### 4.2.2 OCI规范修改流程
+#### 4.2.2 OCI規範修改流程
 
-1. **规范解析**：解析原始`OCI`规范
-2. **设备发现**：通过`libnvidia-container`发现可用`GPU`设备
-3. **权限检查**：验证容器是否有权限访问指定设备
-4. **规范修改**：添加设备挂载、环境变量和钩子
-5. **规范验证**：确保修改后的规范符合`OCI`标准
+1. **規範解析**：解析原始`OCI`規範
+2. **裝置發現**：透過`libnvidia-container`發現可用`GPU`裝置
+3. **許可權檢查**：驗證容器是否有許可權訪問指定裝置
+4. **規範修改**：新增裝置掛載、環境變數和鉤子
+5. **規範驗證**：確保修改後的規範符合`OCI`標準
 
-#### 4.2.3 设备挂载策略
+#### 4.2.3 裝置掛載策略
 
 ```bash
-# internal/discover/devices.go - 设备文件挂载映射
+# internal/discover/devices.go - 裝置檔案掛載對映
 /dev/nvidia0 -> /dev/nvidia0
 /dev/nvidiactl -> /dev/nvidiactl
 /dev/nvidia-uvm -> /dev/nvidia-uvm
 
-# internal/discover/libraries.go - 库文件挂载映射
+# internal/discover/libraries.go - 庫檔案掛載對映
 /usr/lib/x86_64-linux-gnu/libcuda.so.1 -> /usr/lib/x86_64-linux-gnu/libcuda.so.1
 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 -> /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1
 ```
 
-### 4.3 运行时模式深度分析
+### 4.3 執行時模式深度分析
 
-`NVIDIA Container Toolkit` 支持多种运行时模式，每种模式针对不同的使用场景和硬件平台进行了优化。
+`NVIDIA Container Toolkit` 支援多種執行時模式，每種模式針對不同的使用場景和硬體平台進行了最佳化。
 
 #### 4.3.1 Legacy 模式 (v1.0.0+)
 
-**概述**：`Legacy` 模式是传统的 `GPU` 容器化方式，基于 `nvidia-docker v1` 的设计理念，通过 `nvidia-container-runtime-hook` 实现 `GPU` 资源的注入。
+**概述**：`Legacy` 模式是傳統的 `GPU` 容器化方式，基於 `nvidia-docker v1` 的設計理念，透過 `nvidia-container-runtime-hook` 實現 `GPU` 資源的注入。
 
-> **版本演进**：
+> **版本演進**：
 >
-> - **v1.0.0+**：引入基础 `Legacy` 模式，兼容 `nvidia-docker v1` 架构
-> - **v1.2.0+**：增强环境变量处理和错误恢复机制
-> - **v1.4.0+**：优化 `Hook` 执行性能和设备发现逻辑
-> - **v1.6.0+**：改进 `CUDA` 兼容性处理和库文件管理
+> - **v1.0.0+**：引入基礎 `Legacy` 模式，兼容 `nvidia-docker v1` 架構
+> - **v1.2.0+**：增強環境變數處理和錯誤恢復機制
+> - **v1.4.0+**：最佳化 `Hook` 執行效能和裝置發現邏輯
+> - **v1.6.0+**：改進 `CUDA` 相容性處理和庫檔案管理
 
 **配置方式**：
 
@@ -781,44 +781,44 @@ cuda-compat-mode = "auto"
 
 **工作原理**：
 
-1. **环境变量驱动**：主要依赖 `NVIDIA_VISIBLE_DEVICES` 等环境变量
-2. **运行时钩子**：通过 `OCI` 运行时钩子在容器启动时注入 `GPU` 资源
-3. **动态发现**：使用 `NVML` 库动态发现和管理 `GPU` 设备
+1. **環境變數驅動**：主要依賴 `NVIDIA_VISIBLE_DEVICES` 等環境變數
+2. **執行時鉤子**：透過 `OCI` 執行時鉤子在容器啟動時注入 `GPU` 資源
+3. **動態發現**：使用 `NVML` 庫動態發現和管理 `GPU` 裝置
 
-**核心实现**：
+**核心實現**：
 
 ```go
-// Legacy 模式的设备发现
+// Legacy 模式的裝置發現
 func (l *legacyRuntime) discoverDevices() error {
     devices := os.Getenv("NVIDIA_VISIBLE_DEVICES")
     if devices == "" || devices == "void" {
         return nil
     }
 
-    // 通过 NVML 发现 GPU 设备
+    // 透過 NVML 發現 GPU 裝置
     return l.nvmlLib.Init()
 }
 ```
 
-**适用场景**：
+**適用場景**：
 
-- 传统的 `Docker` 环境
-- 需要与 `nvidia-docker v1` 兼容的场景
-- 简单的 `GPU` 容器化需求
+- 傳統的 `Docker` 環境
+- 需要與 `nvidia-docker v1` 相容的場景
+- 簡單的 `GPU` 容器化需求
 
 #### 4.3.2 CDI 模式 (v1.12.0+)
 
-**概述**：`CDI` (`Container Device Interface`) 模式是基于 `CNCF` 标准的现代化设备管理方式，提供了标准化、可扩展的设备接口。
+**概述**：`CDI` (`Container Device Interface`) 模式是基於 `CNCF` 標準的現代化裝置管理方式，提供了標準化、可擴展的裝置介面。
 
-> **版本要求**：`NVIDIA Container Toolkit` v1.12.0+ 开始支持 `CDI` 规范生成
+> **版本要求**：`NVIDIA Container Toolkit` v1.12.0+ 開始支援 `CDI` 規範生成
 
-**容器运行时支持版本**：
+**容器執行時支援版本**：
 
-_Docker 支持情况：_
+_Docker 支援情況：_
 
-- **开始支持版本：** Docker 25.0.0
-- **默认启用版本：** Docker 28.2.0
-- **手动启用配置 (25.0.0-28.1.1)：**
+- **開始支援版本：** Docker 25.0.0
+- **預設啟用版本：** Docker 28.2.0
+- **手動啟用配置 (25.0.0-28.1.1)：**
 
   ```json
   {
@@ -828,9 +828,9 @@ _Docker 支持情况：_
   }
   ```
 
-_containerd 支持情况：_
+_containerd 支援情況：_
 
-- 通过 `CRI` 插件配置支持 `CDI`
+- 透過 `CRI` 插件配置支持 `CDI`
 - **containerd 1.x 配置：**
 
 ```toml
@@ -849,10 +849,10 @@ version = 2
     cdi_spec_dirs = ["/etc/cdi", "/var/run/cdi"]
   ```
 
-_其他运行时：_
+_其他執行時：_
 
-- **CRI-O：** 默认启用 `CDI` 支持
-- **Podman：** v4.1.0+ 完整支持，无需特殊配置
+- **CRI-O：** 預設啟用 `CDI` 支持
+- **Podman：** v4.1.0+ 完整支持，無需特殊配置
 
 **NVIDIA Container Toolkit 配置**：
 
@@ -866,43 +866,43 @@ annotation-prefixes = ["cdi.k8s.io/"]
 spec-dirs = ["/etc/cdi", "/var/run/cdi"]
 ```
 
-**CDI 规范生成与配置**：
+**CDI 規範生成與配置**：
 
-**1. 生成 CDI 规范文件**：
+**1. 生成 CDI 規範檔案**：
 
 ```bash
-# 基础生成命令
+# 基礎生成命令
 sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 
-# 指定设备命名策略
+# 指定裝置命名策略
 sudo nvidia-ctk cdi generate \
   --device-name-strategy=index,uuid \
   --output=/etc/cdi/nvidia.yaml
 
-# 自动检测模式 (推荐)
+# 自動檢測模式 (推薦)
 sudo nvidia-ctk cdi generate \
   --mode=auto \
   --output=/etc/cdi/nvidia.yaml
 
-# 指定库搜索路径
+# 指定庫搜尋路徑
 sudo nvidia-ctk cdi generate \
   --library-search-paths=/usr/lib/x86_64-linux-gnu \
   --output=/etc/cdi/nvidia.yaml
 ```
 
-**2. 查看可用 CDI 设备**：
+**2. 查看可用 CDI 裝置**：
 
 ```bash
-# 列出所有 CDI 设备
+# 列出所有 CDI 裝置
 nvidia-ctk cdi list
 
-# 输出示例：
+# 輸出示例：
 # nvidia.com/gpu=0
 # nvidia.com/gpu=1
 # nvidia.com/gpu=all
 ```
 
-**3. 配置容器运行时启用 CDI**：
+**3. 配置容器執行時啟用 CDI**：
 
 ```bash
 # Docker 配置
@@ -911,12 +911,12 @@ sudo nvidia-ctk runtime configure --runtime=docker --cdi.enabled
 # containerd 配置
 sudo nvidia-ctk runtime configure --runtime=containerd --cdi.enabled
 
-# 重启服务
+# 重啟服務
 sudo systemctl restart docker
 sudo systemctl restart containerd
 ```
 
-**4. 使用 CDI 运行容器**：
+**4. 使用 CDI 執行容器**：
 
 ```bash
 # Docker (25.0.0+)
@@ -929,7 +929,7 @@ podman run --rm --device=nvidia.com/gpu=0 ubuntu nvidia-smi
 docker run --rm --device=nvidia.com/gpu=all ubuntu nvidia-smi
 ```
 
-**5. 高级配置选项**：
+**5. 高階配置選項**：
 
 ```bash
 # 指定 vendor 和 class
@@ -938,7 +938,7 @@ sudo nvidia-ctk cdi generate \
   --class=gpu \
   --output=/etc/cdi/nvidia.yaml
 
-# 指定配置搜索路径
+# 指定配置搜尋路徑
 sudo nvidia-ctk cdi generate \
   --config-search-path=/etc/nvidia-container-runtime \
   --output=/etc/cdi/nvidia.yaml
@@ -950,24 +950,24 @@ sudo nvidia-ctk cdi generate \
   --output=/etc/cdi/nvidia.yaml
 ```
 
-**6. 自动刷新CDI规范**：
+**6. 自動重新整理CDI規範**：
 
 ```bash
-# 启用systemd服务自动刷新
+# 啟用systemd服務自動重新整理
 sudo systemctl enable nvidia-cdi-refresh.service
 sudo systemctl start nvidia-cdi-refresh.service
 
-# 手动刷新
+# 手動重新整理
 sudo systemctl restart nvidia-cdi-refresh.service
 ```
 
 **工作原理**：
 
-1. **规范化接口**：使用标准的`CDI`规范定义设备信息
-2. **声明式配置**：通过`YAML/JSON`文件声明设备规范
-3. **运行时无关**：与具体的容器运行时解耦
+1. **規範化介面**：使用標準的`CDI`規範定義裝置資訊
+2. **宣告式配置**：透過`YAML/JSON`檔案宣告裝置規範
+3. **執行時無關**：與具體的容器執行時解耦
 
-**CDI规范示例**：
+**CDI規範示例**：
 
 ```yaml
 cdiVersion: "0.5.0"
@@ -987,10 +987,10 @@ devices:
         - "NVIDIA_VISIBLE_DEVICES=0"
 ```
 
-**核心实现**：
+**核心實現**：
 
 ```go
-// CDI模式的修改器创建
+// CDI模式的修改器建立
 func NewCDIModifier(logger logger.Interface, cfg *config.Config, ociSpec oci.Spec) (oci.SpecModifier, error) {
     devices := getRequestedDevices(ociSpec)
 
@@ -1006,23 +1006,23 @@ func NewCDIModifier(logger logger.Interface, cfg *config.Config, ociSpec oci.Spe
 }
 ```
 
-**适用场景**：
+**適用場景**：
 
-- `Kubernetes` 等现代容器编排系统
-- 需要标准化设备管理的环境
-- 多厂商设备混合部署
-- 云原生应用
+- `Kubernetes` 等現代容器編排系統
+- 需要標準化裝置管理的環境
+- 多廠商裝置混合部署
+- 雲原生應用
 
 #### 4.3.3 CSV 模式 (v1.0.0+)
 
-**概述**：`CSV` (`Comma-Separated Values`) 模式专为 `Tegra/Jetson` 等嵌入式 `GPU` 系统设计，通过 `CSV` 文件静态定义设备挂载规范。
+**概述**：`CSV` (`Comma-Separated Values`) 模式專為 `Tegra/Jetson` 等嵌入式 `GPU` 系統設計，透過 `CSV` 檔案靜態定義裝置掛載規範。
 
-**版本演进：**
+**版本演進：**
 
-- **v1.0.0+**: 引入基础 `CSV` 文件解析和挂载功能
-- **v1.3.0+**: 增强 `CSV` 文件格式支持和错误处理
-- **v1.6.0+**: 优化 `Tegra` 平台兼容性和性能
-- **v1.10.0+**: 支持自定义 `CSV` 文件路径和动态加载
+- **v1.0.0+**: 引入基礎 `CSV` 檔案解析和掛載功能
+- **v1.3.0+**: 增強 `CSV` 檔案格式支援和錯誤處理
+- **v1.6.0+**: 最佳化 `Tegra` 平台兼容性和性能
+- **v1.10.0+**: 支援自定義 `CSV` 檔案路徑和動態載入
 
 **配置方式**：
 
@@ -1036,14 +1036,14 @@ mount-spec-path = "/etc/nvidia-container-runtime/host-files-for-container.d"
 
 **工作原理**：
 
-1. **静态配置**：通过 `CSV` 文件预定义设备和库文件挂载
-2. **文件驱动**：解析 `CSV` 文件生成挂载规范
-3. **平台特化**：针对 `Tegra` 平台的特殊需求优化
+1. **靜態配置**：透過 `CSV` 檔案預定義裝置和庫檔案掛載
+2. **檔案驅動**：解析 `CSV` 檔案生成掛載規範
+3. **平台特化**：針對 `Tegra` 平台的特殊需求最佳化
 
 **CSV 文件格式**：
 
 ```csv
-# 设备类型, 路径
+# 裝置類型, 路徑
 dev, nvidiactl
 dev, nvhost-gpu
 dev, nvhost-ctrl
@@ -1055,17 +1055,17 @@ lib, /usr/lib/aarch64-linux-gnu/tegra/libnvrm.so
 sym, /usr/lib/aarch64-linux-gnu/libcuda.so
 ```
 
-**支持的挂载类型**：
+**支援的掛載類型**：
 
-- **`dev`**: 字符设备文件（如`/dev/nvidia0`）
-- **`lib`**: 库文件或常规文件
-- **`dir`**: 目录挂载
-- **`sym`**: 符号链接
+- **`dev`**: 字元裝置檔案（如`/dev/nvidia0`）
+- **`lib`**: 庫檔案或常規檔案
+- **`dir`**: 目錄掛載
+- **`sym`**: 符號連結
 
-**核心实现**：
+**核心實現**：
 
 ```go
-// CSV模式的挂载规范解析
+// CSV模式的掛載規範解析
 func NewMountSpecFromLine(line string) (*MountSpec, error) {
     parts := strings.SplitN(strings.TrimSpace(line), ",", 2)
     if len(parts) < 2 {
@@ -1079,127 +1079,127 @@ func NewMountSpecFromLine(line string) (*MountSpec, error) {
 }
 ```
 
-**默认CSV文件**：
+**預設CSV文件**：
 
-- **`devices.csv`**: 包含`GPU`设备节点定义
-- **`drivers.csv`**: 驱动程序相关文件
-- **`l4t.csv`**: `Linux for Tegra`组件
+- **`devices.csv`**: 包含`GPU`裝置節點定義
+- **`drivers.csv`**: 驅動程式相關檔案
+- **`l4t.csv`**: `Linux for Tegra`元件
 
-**环境变量控制**：
+**環境變數控制**：
 
 ```bash
-# 默认加载基础文件：devices.csv, drivers.csv, l4t.csv
-# 注：网上流传的 NVIDIA_REQUIRE_JETPACK=csv-mounts=all 写法未在官方文档核实到出处，使用前请以 CSV Mode 官方说明为准
+# 預設載入基礎檔案：devices.csv, drivers.csv, l4t.csv
+# 注：網上流傳的 NVIDIA_REQUIRE_JETPACK=csv-mounts=all 寫法未在官方文件核實到出處，使用前請以 CSV Mode 官方說明為準
 ```
 
-**适用场景**：
+**適用場景**：
 
-- `Tegra/Jetson`嵌入式设备
-- 无`NVML`支持的`ARM`平台
-- 边缘计算和`IoT`应用
-- 资源受限的嵌入式环境
+- `Tegra/Jetson`嵌入式裝置
+- 無`NVML`支持的`ARM`平台
+- 邊緣計算和`IoT`應用
+- 資源受限的嵌入式環境
 
-### 4.4 运行时模式对比分析
+### 4.4 執行時模式對比分析
 
-#### 4.4.1 功能特性对比
+#### 4.4.1 功能特性對比
 
 | 特性             | `Legacy` 模式      | `CDI` 模式       | `CSV` 模式           |
 | ---------------- | ------------------ | ---------------- | -------------------- |
-| **设备发现方式** | 动态 `NVML` 查询   | 动态 `CDI` 规范  | 静态 `CSV` 文件      |
-| **配置方式**     | 环境变量           | `CDI` 规范文件   | `CSV` 文件           |
+| **裝置發現方式** | 動態 `NVML` 查詢   | 動態 `CDI` 規範  | 靜態 `CSV` 文件      |
+| **配置方式**     | 環境變數           | `CDI` 規範檔案   | `CSV` 文件           |
 | **平台支持**     | `x86_64` `GPU`     | 通用平台         | `Tegra/ARM`          |
-| **标准化程度**   | 低 (`NVIDIA` 专有) | 高 (`CNCF` 标准) | 中等 (文件格式标准)  |
-| **运行时依赖**   | `NVML` 库          | `CDI` 运行时     | 文件系统             |
-| **动态性**       | 高                 | 高               | 低（静态配置）       |
-| **复杂度**       | 中等               | 高               | 低                   |
-| **性能开销**     | 中等               | 低               | 最低                 |
+| **標準化程度**   | 低 (`NVIDIA` 專有) | 高 (`CNCF` 標準) | 中等 (檔案格式標準)  |
+| **執行時依賴**   | `NVML` 庫          | `CDI` 執行時     | 檔案系統             |
+| **動態性**       | 高                 | 高               | 低（靜態配置）       |
+| **複雜度**       | 中等               | 高               | 低                   |
+| **效能開銷**     | 中等               | 低               | 最低                 |
 
-#### 4.4.2 适用场景分析
+#### 4.4.2 適用場景分析
 
-**Legacy模式适用场景**：
+**Legacy模式適用場景**：
 
-- **传统Docker环境**：已有的`nvidia-docker`部署
-- **简单GPU应用**：单机`GPU`容器化需求
-- **快速迁移**：从`nvidia-docker` v1升级
-- **开发测试**：本地开发环境
+- **傳統Docker環境**：已有的`nvidia-docker`部署
+- **簡單GPU應用**：單機`GPU`容器化需求
+- **快速遷移**：從`nvidia-docker` v1升級
+- **開發測試**：本地開發環境
 
-**CDI模式适用场景**：
+**CDI模式適用場景**：
 
-- **Kubernetes集群**：云原生`GPU`工作负载
-- **多厂商环境**：混合`GPU/加速器`部署
-- **标准化需求**：需要符合`CNCF`标准
-- **大规模部署**：企业级容器平台
-- **设备管理复杂**：需要精细的设备控制
+- **Kubernetes叢集**：云原生`GPU`工作負載
+- **多廠商環境**：混合`GPU/加速器`部署
+- **標準化需求**：需要符合`CNCF`標準
+- **大規模部署**：企業級容器平台
+- **裝置管理複雜**：需要精細的裝置控制
 
-**CSV模式适用场景**：
+**CSV模式適用場景**：
 
-- **嵌入式系统**：`Tegra/Jetson`等`ARM`设备
-- **边缘计算**：资源受限环境
-- **离线部署**：无网络连接的环境
-- **静态配置**：设备配置固定的场景
-- **IoT应用**：物联网`GPU`应用
+- **嵌入式系統**：`Tegra/Jetson`等`ARM`裝置
+- **邊緣計算**：資源受限環境
+- **離線部署**：無網路連線的環境
+- **靜態配置**：裝置配置固定的場景
+- **IoT應用**：物聯網`GPU`應用
 
-#### 4.4.3 性能与资源消耗对比
+#### 4.4.3 效能與資源消耗對比
 
 ```text
-资源消耗（从低到高）：
+資源消耗（從低到高）：
 `CSV` 模式 < `CDI` 模式 < `Legacy` 模式
 
-启动速度（从快到慢）：
+啟動速度（從快到慢）：
 `CSV` 模式 > `CDI` 模式 > `Legacy` 模式
 
-灵活性（从低到高）：
+靈活性（從低到高）：
 `CSV` 模式 < `Legacy` 模式 < `CDI` 模式
 
-标准化程度（从低到高）：
+標準化程度（從低到高）：
 `Legacy` 模式 < `CSV` 模式 < `CDI` 模式
 ```
 
-#### 4.4.4 模式选择建议
+#### 4.4.4 模式選擇建議
 
-**选择 Legacy 模式的情况**：
+**選擇 Legacy 模式的情況**：
 
-- 现有 `nvidia-docker` 部署需要平滑升级
-- 简单的单机 `GPU` 容器化需求
-- 对标准化要求不高的场景
+- 現有 `nvidia-docker` 部署需要平滑升級
+- 簡單的單機 `GPU` 容器化需求
+- 對標準化要求不高的場景
 
-**选择 CDI 模式的情况**：
+**選擇 CDI 模式的情況**：
 
-- 新建的 `Kubernetes GPU` 集群
-- 需要与其他厂商设备集成
-- 要求符合 `CNCF` 标准
-- 大规模生产环境部署
+- 新建的 `Kubernetes GPU` 叢集
+- 需要與其他廠商裝置整合
+- 要求符合 `CNCF` 標準
+- 大規模生產環境部署
 
-**选择 CSV 模式的情况**：
+**選擇 CSV 模式的情況**：
 
-- `Tegra/Jetson` 等 `ARM` 嵌入式设备
-- 边缘计算和 `IoT` 应用
-- 资源受限的环境
-- 静态设备配置场景
+- `Tegra/Jetson` 等 `ARM` 嵌入式裝置
+- 邊緣計算和 `IoT` 應用
+- 資源受限的環境
+- 靜態裝置配置場景
 
-**Auto 模式 (自动选择) (v1.8.0+)**：
+**Auto 模式 (自動選擇) (v1.8.0+)**：
 
 ```toml
 [nvidia-container-runtime]
 mode = "auto"
 ```
 
-> **版本演进**：
+> **版本演進**：
 >
-> - **v1.8.0+**：引入 `Auto` 模式自动选择机制
-> - **v1.10.0+**：增强平台检测和模式选择逻辑
-> - **v1.12.0+**：优化 `CDI` 规范文件检测和验证
-> - **v1.15.0+**：改进 `Tegra` 平台识别和兼容性处理
+> - **v1.8.0+**：引入 `Auto` 模式自動選擇機制
+> - **v1.10.0+**：增強平台檢測和模式選擇邏輯
+> - **v1.12.0+**：最佳化 `CDI` 規範檔案檢測和驗證
+> - **v1.15.0+**：改進 `Tegra` 平台識別和相容性處理
 
-`Auto` 模式会根据系统环境自动选择最适合的模式：
+`Auto` 模式會根據系統環境自動選擇最適合的模式：
 
-- 检测到 `Tegra` 系统且无 `NVML` → `CSV` 模式
-- 检测到 `CDI` 规范文件 → `CDI` 模式
-- 其他情况 → `Legacy` 模式
+- 檢測到 `Tegra` 系統且無 `NVML` → `CSV` 模式
+- 檢測到 `CDI` 規範檔案 → `CDI` 模式
+- 其他情況 → `Legacy` 模式
 
-### 4.5 错误处理与日志记录
+### 4.5 錯誤處理與日誌記錄
 
-#### 4.5.1 错误处理机制
+#### 4.5.1 錯誤處理機制
 
 ```go
 // internal/oci/runtime_modifier.go
@@ -1217,7 +1217,7 @@ func (e *RuntimeError) Error() string {
 }
 ```
 
-#### 4.5.2 日志记录策略
+#### 4.5.2 日誌記錄策略
 
 ```go
 // internal/logger/logger.go
@@ -1231,28 +1231,28 @@ type Interface interface {
 
 ---
 
-## 5. OCI Hooks 机制与生命周期管理
+## 5. OCI Hooks 機制與生命週期管理
 
 ### 5.1 OCI Hooks 概述
 
-`OCI` (`Open Container Initiative`) `Hooks` 是容器运行时规范中定义的扩展机制，允许在容器生命周期的特定阶段执行自定义操作。`NVIDIA Container Toolkit` 广泛使用 `Hooks` 机制来实现 `GPU` 设备的动态注入和配置。
+`OCI` (`Open Container Initiative`) `Hooks` 是容器執行時規範中定義的擴展機制，允許在容器生命週期的特定階段執行自定義操作。`NVIDIA Container Toolkit` 廣泛使用 `Hooks` 機制來實現 `GPU` 裝置的動態注入和配置。
 
-> **版本演进**（依据官方 changelog，核对日 2026-11-05）：
+> **版本演進**（依據官方 changelog，核對日 2026-11-05）：
 >
-> - **v1.16.0-rc.1 起**：`nvidia-ctk hook` 子命令迁移为独立的 `nvidia-cdi-hook` 程序，子命令保持不变
+> - **v1.16.0-rc.1 起**：`nvidia-ctk hook` 子命令遷移為獨立的 `nvidia-cdi-hook` 程序，子命令保持不變
 
-#### 5.1.1 Hook 类型与执行时机
+#### 5.1.1 Hook 類型與執行時機
 
-根据 `OCI` 运行时规范，`Hooks` 分为以下几种类型，执行时机与容器生命周期操作一一对应：
+根據 `OCI` 執行時規範，`Hooks` 分為以下幾種類型，執行時機與容器生命週期操作一一對應：
 
-1. **`prestart`**：在 `create` 操作中执行——运行环境创建之后、用户进程启动之前。该 hook 已被规范**弃用**，推荐用 `createRuntime` 替代
-2. **`createRuntime`**：同样在 `create` 操作中、用户进程启动之前执行，运行在运行时（runtime）命名空间；官方推荐以此替代 `prestart`
-3. **`createContainer`**：仍在 `create` 操作中执行，但在 `createRuntime` 之后——此时容器进程已创建、用户程序尚未执行，hook 运行在容器命名空间内
-4. **`startContainer`**：在 `start` 操作中、用户进程执行之前运行（运行在容器命名空间内）
-5. **`poststart`**：在 `start` 操作中、用户进程启动之后、`start` 调用返回之前执行
-6. **`poststop`**：在 `delete` 操作中、容器删除之后、`delete` 调用返回之前执行
+1. **`prestart`**：在 `create` 操作中執行——執行環境建立之後、使用者行程啟動之前。該 hook 已被規範**棄用**，推薦用 `createRuntime` 替代
+2. **`createRuntime`**：同樣在 `create` 操作中、使用者行程啟動之前執行，執行在執行時（runtime）名稱空間；官方推薦以此替代 `prestart`
+3. **`createContainer`**：仍在 `create` 操作中執行，但在 `createRuntime` 之后——此時容器行程已建立、使用者程式尚未執行，hook 執行在容器名稱空間內
+4. **`startContainer`**：在 `start` 操作中、使用者行程執行之前執行（執行在容器名稱空間內）
+5. **`poststart`**：在 `start` 操作中、使用者行程啟動之後、`start` 呼叫返回之前執行
+6. **`poststop`**：在 `delete` 操作中、容器刪除之後、`delete` 呼叫返回之前執行
 
-也就是说，`createRuntime`、`prestart`、`createContainer` 三者都发生在 `create` 阶段（容器用户进程启动之前），而 `startContainer` 发生在 `start` 调用时、用户进程执行之前。`NVIDIA Container Toolkit` 的设备注入依赖的就是 `create` 阶段的这几个时机。
+也就是說，`createRuntime`、`prestart`、`createContainer` 三者都发生在 `create` 階段（容器使用者行程啟動之前），而 `startContainer` 发生在 `start` 呼叫時、使用者行程執行之前。`NVIDIA Container Toolkit` 的裝置註入依賴的就是 `create` 階段的這幾個時機。
 
 ```go
 // pkg/config/ocihook/hooks.go
@@ -1268,13 +1268,13 @@ type specHook struct {
 
 `NVIDIA Container Toolkit` 主要使用以下 `Hooks`：
 
-- **`prestart` hook**：用于 `Legacy` 模式下的设备注入
-- **`createContainer` hook**：用于 `CDI` 模式下的设备配置
-- **`createRuntime` hook**：用于 `Legacy` 模式下的运行时环境准备
+- **`prestart` hook**：用於 `Legacy` 模式下的裝置註入
+- **`createContainer` hook**：用於 `CDI` 模式下的裝置配置
+- **`createRuntime` hook**：用於 `Legacy` 模式下的執行時環境準備
 
-### 5.2 Hook 实现机制
+### 5.2 Hook 實現機制
 
-#### 5.2.1 Hook 创建与注册
+#### 5.2.1 Hook 建立與註冊
 
 ```go
 // internal/discover/hooks.go
@@ -1301,7 +1301,7 @@ func (c cdiHookCreator) Create(name HookName, args ...string) *Hook {
 }
 ```
 
-#### 5.2.2 Hook 执行流程
+#### 5.2.2 Hook 執行流程
 
 ```go
 // internal/modifier/stable.go
@@ -1311,7 +1311,7 @@ type stableRuntimeModifier struct {
 }
 
 func (m stableRuntimeModifier) Modify(spec *specs.Spec) error {
-    // 检查是否已存在 NVIDIA hook
+    // 檢查是否已存在 NVIDIA hook
     for _, hook := range spec.Hooks.Prestart {
         if isNVIDIAContainerRuntimeHook(&hook) {
             m.logger.Info("Existing nvidia-container-runtime hook found in OCI spec")
@@ -1330,28 +1330,28 @@ func (m stableRuntimeModifier) Modify(spec *specs.Spec) error {
 }
 ```
 
-### 5.3 nvidia-cdi-hook 实现
+### 5.3 nvidia-cdi-hook 實現
 
-#### 5.3.1 CDI Hook 架构
+#### 5.3.1 CDI Hook 架構
 
-`nvidia-cdi-hook` 是专门为 `CDI` 模式设计的 `Hook` 程序，负责在容器创建阶段执行设备相关的配置操作。
+`nvidia-cdi-hook` 是專門為 `CDI` 模式設計的 `Hook` 程序，負責在容器建立階段執行裝置相關的配置操作。
 
-`nvidia-cdi-hook` 不是按 hook 阶段分发，而是按子命令组织——CDI 规范里的每个 hook 条目直接指向一个具体子命令。依据 `cmd/nvidia-cdi-hook/README.md`，当前提供的子命令如下：
+`nvidia-cdi-hook` 不是按 hook 階段分發，而是按子命令組織——CDI 規範裡的每個 hook 條目直接指向一個具體子命令。依據 `cmd/nvidia-cdi-hook/README.md`，當前提供的子命令如下：
 
 | 子命令 | 作用 |
 | ------ | ---- |
-| `create-symlinks` | 在挂载进容器的目录里创建符号链接 |
-| `update-ldcache` | 更新挂载目录内的动态链接器缓存 |
-| `enable-cuda-compat` | 需要时把 CUDA compat 库目录加入 ldconfig 搜索路径 |
-| `disable-device-node-modification` | 确保容器内的 `/proc/driver/nvidia/params` 不允许修改设备节点 |
-| `update-application-profile` | 通过 application profile 更新驱动设置（如 `EGLVisibleDGPUDevices`） |
-| `apply-cuda-memory-limits` | 为容器内的 GPU 设备设置 CUDA 内存软/硬限制 |
+| `create-symlinks` | 在掛載進容器的目錄裡建立符號連結 |
+| `update-ldcache` | 更新掛載目錄內的動態連結器快取 |
+| `enable-cuda-compat` | 需要時把 CUDA compat 庫目錄加入 ldconfig 搜尋路徑 |
+| `disable-device-node-modification` | 確保容器內的 `/proc/driver/nvidia/params` 不允許修改裝置節點 |
+| `update-application-profile` | 透過 application profile 更新驅動設定（如 `EGLVisibleDGPUDevices`） |
+| `apply-cuda-memory-limits` | 為容器內的 GPU 裝置設定 CUDA 記憶體軟/硬限制 |
 
-> 同一套子命令实现也被 `nvidia-ctk hook` 复用（两者通过 `ConfigureCDIHookCommand` 共享命令注册）；运行时若遇到不认识的 hook 子命令，只会打警告不阻断容器启动。
+> 同一套子命令實現也被 `nvidia-ctk hook` 複用（兩者透過 `ConfigureCDIHookCommand` 共享命令註冊）；執行時若遇到不認識的 hook 子命令，只會打警告不阻斷容器啟動。
 
-#### 5.3.2 符号链接创建
+#### 5.3.2 符號連結建立
 
-`nvidia-cdi-hook` 的一个重要功能是创建必要的符号链接，确保容器内的应用程序能够正确访问 `GPU` 设备和库文件。
+`nvidia-cdi-hook` 的一個重要功能是建立必要的符號連結，確保容器內的應用程式能夠正確訪問 `GPU` 裝置和庫檔案。
 
 ```go
 // internal/discover/symlinks.go
@@ -1365,13 +1365,13 @@ func (h symlinkHook) createSymlinks() error {
     for i, target := range h.targets {
         link := h.links[i]
 
-        // 检查目标文件是否存在
+        // 檢查目標檔案是否存在
         if _, err := os.Stat(target); os.IsNotExist(err) {
             h.logger.Warnf("Target file %s does not exist, skipping symlink creation", target)
             continue
         }
 
-        // 创建符号链接
+        // 建立符號連結
         if err := os.Symlink(target, link); err != nil {
             if !os.IsExist(err) {
                 return fmt.Errorf("failed to create symlink %s -> %s: %v", link, target, err)
@@ -1385,11 +1385,11 @@ func (h symlinkHook) createSymlinks() error {
 }
 ```
 
-### 5.4 设备发现与管理机制
+### 5.4 裝置發現與管理機制
 
-#### 5.4.1 NVML 集成与 GPU 设备发现
+#### 5.4.1 NVML 整合與 GPU 裝置發現
 
-`NVIDIA Container Toolkit` 通过 `NVIDIA Management Library (NVML)` 实现 `GPU` 设备的发现和管理：
+`NVIDIA Container Toolkit` 透過 `NVIDIA Management Library (NVML)` 實現 `GPU` 裝置的發現和管理：
 
 ```go
 // pkg/nvcdi/lib-nvml.go
@@ -1400,7 +1400,7 @@ func (l *nvmllib) GetAllDeviceSpecs() ([]specs.Device, error) {
     }
     defer nvmlLib.Shutdown()
 
-    // 获取GPU设备数量
+    // 獲取GPU裝置數量
     count, ret := nvmlLib.DeviceGetCount()
     if ret != nvml.SUCCESS {
         return nil, fmt.Errorf("failed to get device count: %v", ret)
@@ -1414,14 +1414,14 @@ func (l *nvmllib) GetAllDeviceSpecs() ([]specs.Device, error) {
             continue
         }
 
-        // 获取设备UUID
+        // 獲取裝置UUID
         uuid, ret := device.GetUUID()
         if ret != nvml.SUCCESS {
             l.logger.Warnf("Failed to get UUID for device %d: %v", i, ret)
             continue
         }
 
-        // 获取设备名称
+        // 獲取裝置名稱
         name, ret := device.GetName()
         if ret != nvml.SUCCESS {
             l.logger.Warnf("Failed to get name for device %d: %v", i, ret)
@@ -1440,34 +1440,34 @@ func (l *nvmllib) GetAllDeviceSpecs() ([]specs.Device, error) {
 
 #### 5.4.2 MIG (Multi-Instance GPU) 支持 (v1.5.0+)
 
-`MIG` 技术允许将单个 `GPU` 分割为多个独立的 `GPU` 实例，`NVIDIA Container Toolkit` 自 v1.5.0 版本开始提供完整的 `MIG` 支持：
+`MIG` 技術允許將單個 `GPU` 分割為多個獨立的 `GPU` 實例，`NVIDIA Container Toolkit` 自 v1.5.0 版本開始提供完整的 `MIG` 支持：
 
-**版本演进：**
+**版本演進：**
 
-- **v1.5.0+**: 引入基础 `MIG` 设备发现和 `CDI` 规范生成
-- **v1.8.0+**: 增强 `MIG` 设备命名策略和 `UUID` 支持
-- **v1.12.0+**: 完善 `MIG` 设备的 `CDI` 集成和自动发现
-- **v1.15.0+**: 优化 `MIG` 设备性能和资源管理
+- **v1.5.0+**: 引入基礎 `MIG` 裝置發現和 `CDI` 規範生成
+- **v1.8.0+**: 增強 `MIG` 裝置命名策略和 `UUID` 支持
+- **v1.12.0+**: 完善 `MIG` 裝置的 `CDI` 整合和自動發現
+- **v1.15.0+**: 最佳化 `MIG` 裝置效能和資源管理
 
 ```go
 // pkg/nvcdi/lib-nvml.go
 func (l *nvmllib) getMIGDeviceSpecs() ([]specs.Device, error) {
     var migDevices []specs.Device
 
-    // 遍历所有GPU设备
+    // 遍历所有GPU裝置
     for i := 0; i < l.deviceCount; i++ {
         device, ret := l.nvmllib.DeviceGetHandleByIndex(i)
         if ret != nvml.SUCCESS {
             continue
         }
 
-        // 检查是否启用了 MIG 模式
+        // 檢查是否啟用了 MIG 模式
         migMode, _, ret := device.GetMigMode()
         if ret != nvml.SUCCESS || migMode != nvml.DEVICE_MIG_ENABLE {
             continue
         }
 
-        // 获取 MIG 设备实例
+        // 獲取 MIG 裝置實例
         migDeviceCount, ret := device.GetMaxMigDeviceCount()
         if ret != nvml.SUCCESS {
             continue
@@ -1479,13 +1479,13 @@ func (l *nvmllib) getMIGDeviceSpecs() ([]specs.Device, error) {
                 continue
             }
 
-            // 获取 MIG 设备 UUID
+            // 獲取 MIG 裝置 UUID
             migUUID, ret := migDevice.GetUUID()
             if ret != nvml.SUCCESS {
                 continue
             }
 
-            // 创建 MIG 设备规范
+            // 建立 MIG 裝置規範
             migDevices = append(migDevices, specs.Device{
                 Name: fmt.Sprintf("mig%d-%d", i, j),
                 ContainerEdits: l.getContainerEditsForMIGDevice(migDevice, i, j),
@@ -1497,9 +1497,9 @@ func (l *nvmllib) getMIGDeviceSpecs() ([]specs.Device, error) {
 }
 ```
 
-#### 5.4.3 设备命名策略与标识
+#### 5.4.3 裝置命名策略與標識
 
-`NVIDIA Container Toolkit` 采用统一的设备命名策略：
+`NVIDIA Container Toolkit` 採用統一的裝置命名策略：
 
 ```go
 // pkg/nvcdi/namer.go
@@ -1539,9 +1539,9 @@ func (d *deviceNamer) GetMIGDeviceName(parentIndex int, migIndex int, migUUID st
 }
 ```
 
-### 5.5 Hook 错误处理与恢复
+### 5.5 Hook 錯誤處理與恢復
 
-#### 5.5.1 Hook 执行失败处理
+#### 5.5.1 Hook 執行失敗處理
 
 ```go
 // internal/modifier/hook_remover.go
@@ -1574,7 +1574,7 @@ func (m nvidiaContainerRuntimeHookRemover) Modify(spec *specs.Spec) error {
 }
 ```
 
-#### 5.5.2 Hook 超时处理
+#### 5.5.2 Hook 超時處理
 
 ```go
 // pkg/config/ocihook/oci-hook.go
@@ -1583,10 +1583,10 @@ func CreateHook(hookFilePath string, nvidiaContainerRuntimeHookExecutablePath st
         Path: nvidiaContainerRuntimeHookExecutablePath,
         Args: []string{nvidiaContainerRuntimeHookExecutablePath, "prestart"},
         Env:  []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
-        Timeout: &[]int{30}[0], // 30秒超时
+        Timeout: &[]int{30}[0], // 30秒超時
     }
 
-    // 序列化并写入文件
+    // 序列化並寫入檔案
     hookJSON, err := json.MarshalIndent(hook, "", "  ")
     if err != nil {
         return fmt.Errorf("error marshaling hook to JSON: %v", err)
@@ -1596,15 +1596,15 @@ func CreateHook(hookFilePath string, nvidiaContainerRuntimeHookExecutablePath st
 }
 ```
 
-### 5.6 Hook 性能优化
+### 5.6 Hook 效能最佳化
 
-#### 5.6.1 Hook 执行优化
+#### 5.6.1 Hook 執行最佳化
 
-为了减少 `nvidia-cdi-hook` 执行对容器启动时间的影响，`NVIDIA Container Toolkit` 采用了以下优化策略：
+為了減少 `nvidia-cdi-hook` 執行對容器啟動時間的影響，`NVIDIA Container Toolkit` 採用了以下最佳化策略：
 
-1. **并行执行**：在安全的情况下并行执行多个 `Hook` 操作
-2. **缓存机制**：缓存设备发现和配置结果
-3. **延迟初始化**：只在必要时才执行耗时操作
+1. **並行執行**：在安全的情況下並行執行多個 `Hook` 操作
+2. **快取機制**：快取裝置發現和配置結果
+3. **延遲初始化**：只在必要時才執行耗時操作
 
 ```go
 // internal/discover/cache.go
@@ -1628,7 +1628,7 @@ func (c *deviceCache) getDevices(key string) ([]device.Device, bool) {
 }
 ```
 
-#### 5.6.2 Hook 资源管理
+#### 5.6.2 Hook 資源管理
 
 ```go
 // internal/runtime/runtime_factory.go
@@ -1638,13 +1638,13 @@ func newNVIDIAContainerRuntime(logger logger.Interface, cfg *config.Config, argv
         return nil, fmt.Errorf("error constructing low-level runtime: %v", err)
     }
 
-    // 检查是否为 create 子命令，避免不必要的 Hook 执行
+    // 檢查是否為 create 子命令，避免不必要的 Hook 執行
     if !oci.HasCreateSubcommand(argv) {
         logger.Tracef("Skipping modifier for non-create subcommand")
         return lowLevelRuntime, nil
     }
 
-    // 创建运行时修改器
+    // 建立執行時修改器
     modifier, err := newSpecModifier(logger, cfg, driver)
     if err != nil {
         return nil, fmt.Errorf("error constructing OCI spec modifier: %v", err)
@@ -1654,9 +1654,9 @@ func newNVIDIAContainerRuntime(logger logger.Interface, cfg *config.Config, argv
 }
 ```
 
-### 5.7 Hook 调试与监控
+### 5.7 Hook 除錯與監控
 
-#### 5.7.1 Hook 执行日志
+#### 5.7.1 Hook 執行日誌
 
 ```go
 // cmd/nvidia-ctk/hook/hook.go
@@ -1673,7 +1673,7 @@ func (m hookCommand) run(c *cli.Context) error {
         }
     }()
 
-    // 记录执行时间
+    // 記錄執行時間
     start := time.Now()
     defer func() {
         m.logger.Infof("Hook execution completed in %v", time.Since(start))
@@ -1683,7 +1683,7 @@ func (m hookCommand) run(c *cli.Context) error {
 }
 ```
 
-#### 5.7.2 Hook 状态监控
+#### 5.7.2 Hook 狀態監控
 
 ```go
 // internal/config/hook.go
@@ -1701,7 +1701,7 @@ func (h *HookConfig) validate() error {
     }
 
     if h.Timeout <= 0 {
-        h.Timeout = 30 * time.Second // 默认超时时间
+        h.Timeout = 30 * time.Second // 預設超時時間
     }
 
     return nil
@@ -1710,13 +1710,13 @@ func (h *HookConfig) validate() error {
 
 ---
 
-## 6. 配置管理与自定义
+## 6. 配置管理與自定義
 
-### 6.1 配置文件结构
+### 6.1 配置檔案結構
 
 #### 6.1.1 主配置文件
 
-`NVIDIA Container Toolkit` 的主配置文件位于 `/etc/nvidia-container-runtime/config.toml`：
+`NVIDIA Container Toolkit` 的主配置檔案位於 `/etc/nvidia-container-runtime/config.toml`：
 
 ```toml
 # 全局配置
@@ -1749,7 +1749,7 @@ runtimes = ["runc", "crun"]
 mode = "auto"
 ```
 
-#### 6.1.2 运行时模式配置
+#### 6.1.2 執行時模式配置
 
 ```toml
 [nvidia-container-runtime.modes]
@@ -1766,7 +1766,7 @@ spec-dirs = ["/etc/cdi", "/var/run/cdi"]
 cuda-compat-mode = "auto"
 ```
 
-### 6.2 配置加载机制
+### 6.2 配置載入機制
 
 #### 6.2.1 配置文件查找
 
@@ -1784,7 +1784,7 @@ func GetConfigFilePath() string {
 }
 ```
 
-#### 6.2.2 配置验证
+#### 6.2.2 配置驗證
 
 ```go
 // pkg/config/config.go
@@ -1797,15 +1797,15 @@ func (c *Config) assertValid() error {
 }
 ```
 
-### 6.3 环境变量配置
+### 6.3 環境變數配置
 
-#### 6.3.1 核心环境变量
+#### 6.3.1 核心環境變數
 
 ```bash
-# 指定可见的 GPU 设备
+# 指定可見的 GPU 裝置
 NVIDIA_VISIBLE_DEVICES=0,1,GPU-uuid
 
-# 指定驱动程序能力
+# 指定驅動程式能力
 NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # 禁用特定功能
@@ -1815,7 +1815,7 @@ NVIDIA_DISABLE_REQUIRE=true
 NVIDIA_REQUIRE_CUDA="cuda>=11.0"
 ```
 
-#### 6.3.2 环境变量处理
+#### 6.3.2 環境變數處理
 
 ```go
 // internal/config/image/capabilities.go
@@ -1831,17 +1831,17 @@ func (c Capabilities) String() string {
 
 ---
 
-## 7. 性能优化与最佳实践
+## 7. 效能最佳化與最佳實踐
 
-### 7.1 性能优化策略
+### 7.1 效能最佳化策略
 
-#### 7.1.1 设备发现优化
+#### 7.1.1 裝置發現最佳化
 
-为了提高设备发现的性能，`NVIDIA Container Toolkit` 采用了以下优化策略：
+為了提高裝置發現的效能，`NVIDIA Container Toolkit` 採用了以下最佳化策略：
 
-1. **缓存机制**：缓存设备发现结果，避免重复扫描
-2. **延迟加载**：只在需要时才进行设备发现
-3. **并行处理**：并行处理多个 `GPU` 设备的发现
+1. **快取機制**：快取裝置發現結果，避免重複掃描
+2. **延遲載入**：只在需要時才進行裝置發現
+3. **並行處理**：並行處理多個 `GPU` 裝置的發現
 
 ```go
 // pkg/nvcdi/lib.go
@@ -1854,17 +1854,17 @@ type nvcdilib struct {
     deviceNamers       DeviceNamers
     driverRoot         string
     devRoot            string
-    // 缓存相关字段
+    // 快取相關欄位
     cachedDevices      []device.Device
     cacheValid         bool
 }
 ```
 
-#### 7.1.2 内存使用优化
+#### 7.1.2 記憶體使用最佳化
 
 ```go
 // internal/oci/spec_modifier.go
-// 使用对象池减少内存分配
+// 使用物件池減少記憶體分配
 var specPool = sync.Pool{
     New: func() interface{} {
         return &specs.Spec{}
@@ -1876,22 +1876,22 @@ func getSpec() *specs.Spec {
 }
 
 func putSpec(spec *specs.Spec) {
-    // 重置 spec 状态
+    // 重置 spec 狀態
     *spec = specs.Spec{}
     specPool.Put(spec)
 }
 ```
 
-### 7.2 最佳实践指南
+### 7.2 最佳實踐指南
 
-#### 7.2.1 容器镜像优化
+#### 7.2.1 容器映象最佳化
 
-1. **多阶段构建**：使用多阶段构建减少镜像大小
-2. **基础镜像选择**：选择合适的 `CUDA` 基础镜像
-3. **层缓存优化**：合理安排 `Dockerfile` 指令顺序
+1. **多階段構建**：使用多階段構建減少映象大小
+2. **基礎映象選擇**：選擇合適的 `CUDA` 基礎映象
+3. **層快取最佳化**：合理安排 `Dockerfile` 指令順序
 
 ```dockerfile
-# 多阶段构建示例
+# 多階段構建示例
 FROM nvidia/cuda:11.8-devel-ubuntu20.04 AS builder
 WORKDIR /app
 COPY requirements.txt .
@@ -1904,10 +1904,10 @@ COPY . .
 CMD ["python", "app.py"]
 ```
 
-#### 7.2.2 资源管理最佳实践
+#### 7.2.2 資源管理最佳實踐
 
 ```yaml
-# Kubernetes 资源限制示例
+# Kubernetes 資源限制示例
 apiVersion: v1
 kind: Pod
 spec:
@@ -1920,50 +1920,50 @@ spec:
         requests:
           nvidia.com/gpu: 1
       env:
-        # 注意：这是手写示例，仅用于演示环境变量语义。在 K8s 生产环境里 NVIDIA_VISIBLE_DEVICES
-        # 由 device plugin 通过 allocation 响应注入，不应在 Pod 里手写
+        # 注意：這是手寫示例，僅用於演示環境變數語義。在 K8s 生產環境裡 NVIDIA_VISIBLE_DEVICES
+        # 由 device plugin 透過 allocation 響應注入，不應在 Pod 裡手寫
         - name: NVIDIA_VISIBLE_DEVICES
           value: "0"
         - name: NVIDIA_DRIVER_CAPABILITIES
           value: "compute,utility"
 ```
 
-#### 7.2.3 监控和调试
+#### 7.2.3 監控和除錯
 
 ```bash
-# 检查 GPU 状态
+# 檢查 GPU 狀態
 nvidia-smi
 
-# 查看容器 GPU 使用情况
+# 查看容器 GPU 使用情況
 docker exec <container_id> nvidia-smi
 
-# 检查 CDI 规范
+# 檢查 CDI 規範
 nvidia-ctk cdi list
 
-# 生成 CDI 规范
+# 生成 CDI 規範
 nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 ```
 
 ### 7.3 故障排除指南
 
-#### 7.3.1 常见问题诊断
+#### 7.3.1 常見問題診斷
 
-1. **设备不可见**：检查 `NVIDIA_VISIBLE_DEVICES` 环境变量
-2. **驱动程序不匹配**：验证主机和容器的驱动程序版本
-3. **权限问题**：检查容器的设备访问权限
+1. **裝置不可見**：檢查 `NVIDIA_VISIBLE_DEVICES` 環境變數
+2. **驅動程式不匹配**：驗證主機和容器的驅動程式版本
+3. **許可權問題**：檢查容器的裝置訪問許可權
 
 #### 7.3.2 日志分析
 
 ```bash
-# nvidia-container-runtime 没有独立的 systemd unit，它由容器运行时拉起，日志随所在运行时输出：
-# containerd 场景下查看 journal 日志
+# nvidia-container-runtime 沒有獨立的 systemd unit，它由容器執行時拉起，日誌隨所在執行時輸出：
+# containerd 場景下檢視 journal 日志
 journalctl -u containerd
 
-# Docker 场景下查看 dockerd 日志
+# Docker 場景下檢視 dockerd 日志
 journalctl -u docker
 
-# 开启调试日志：nvidia-container-runtime 没有 NVIDIA_CONTAINER_RUNTIME_DEBUG 这类环境变量，
-# 调试路径需改 config.toml（/etc/nvidia-container-runtime/config.toml），把 debug 项指到文件后重启容器运行时
+# 開啟除錯日誌：nvidia-container-runtime 沒有 NVIDIA_CONTAINER_RUNTIME_DEBUG 這類環境變數，
+# 除錯路徑需改 config.toml（/etc/nvidia-container-runtime/config.toml），把 debug 項指到檔案後重啟容器執行時
 # [nvidia-container-runtime]
 # debug = "/tmp/nvidia-container-runtime-debug.log"
 docker run --runtime=nvidia nvidia/cuda:11.8-runtime-ubuntu20.04 nvidia-smi
@@ -1971,13 +1971,13 @@ docker run --runtime=nvidia nvidia/cuda:11.8-runtime-ubuntu20.04 nvidia-smi
 
 ---
 
-## 8. 容器编排系统集成要点
+## 8. 容器編排系統整合要點
 
-### 8.1 运行时集成机制
+### 8.1 執行時整合機制
 
-#### 8.1.1 Docker 运行时集成
+#### 8.1.1 Docker 執行時整合
 
-**基础配置**：
+**基礎配置**：
 
 ```json
 // /etc/docker/daemon.json
@@ -2003,18 +2003,18 @@ docker run --runtime=nvidia nvidia/cuda:11.8-runtime-ubuntu20.04 nvidia-smi
 }
 ```
 
-**Docker 配置要点**：
+**Docker 配置要點**：
 
-- **运行时注册**：将 `nvidia-container-runtime` 注册为可用运行时
-- **`CDI` 支持**：启用 `Container Device Interface` 功能
-- **默认运行时**：可选择设置为默认 `GPU` 运行时
+- **執行時註冊**：將 `nvidia-container-runtime` 註冊為可用執行時
+- **`CDI` 支持**：啟用 `Container Device Interface` 功能
+- **預設執行時**：可選擇設定為預設 `GPU` 執行時
 
-#### 8.1.2 containerd 运行时集成
+#### 8.1.2 containerd 執行時整合
 
 **配置版本支持**：
 
-- **v2 配置**：推荐的现代配置格式，支持完整的 `CRI` 功能
-- **v1 配置**：`Legacy` 兼容模式，用于旧版本 `containerd`
+- **v2 配置**：推薦的現代配置格式，支持完整的 `CRI` 功能
+- **v1 配置**：`Legacy` 兼容模式，用於舊版本 `containerd`
 
 **containerd v2 配置**：
 
@@ -2053,11 +2053,11 @@ version = 1
         runtime_root = ""
 ```
 
-**配置版本检测与适配**：
+**配置版本檢測與適配**：
 
-`NVIDIA Container Toolkit` 自动检测 `containerd` 配置版本并适配相应的配置格式，确保与不同版本的 `containerd` 兼容。
+`NVIDIA Container Toolkit` 自動檢測 `containerd` 配置版本並適配相應的配置格式，確保與不同版本的 `containerd` 兼容。
 
-#### 8.1.3 CRI-O 运行时集成
+#### 8.1.3 CRI-O 執行時整合
 
 **CRI-O 配置**：
 
@@ -2077,28 +2077,28 @@ allowed_annotations = [
 ]
 ```
 
-### 8.2 Kubernetes 集成架构
+### 8.2 Kubernetes 整合架構
 
-#### 8.2.1 与 Device Plugin 的协作
+#### 8.2.1 與 Device Plugin 的協作
 
-`NVIDIA Container Toolkit` 与 `Kubernetes` 的集成主要通过以下方式实现：
+`NVIDIA Container Toolkit` 與 `Kubernetes` 的整合主要透過以下方式實現：
 
-1. **Device Plugin 负责资源管理**：`NVIDIA Device Plugin` 负责向 `Kubernetes` 报告 `GPU` 资源并处理资源分配
-2. **Container Toolkit 负责运行时配置**：当 `Pod` 被调度到节点后，`Container Toolkit` 负责配置容器运行时以访问 `GPU` 设备
-3. **协作流程**：`Device Plugin` 设置环境变量 (如 `NVIDIA_VISIBLE_DEVICES`)，`Container Toolkit` 根据这些环境变量配置容器的 `GPU` 访问权限
+1. **Device Plugin 負責資源管理**：`NVIDIA Device Plugin` 負責向 `Kubernetes` 報告 `GPU` 資源並處理資源分配
+2. **Container Toolkit 負責執行時配置**：當 `Pod` 被排程到節點後，`Container Toolkit` 負責配置容器執行時以訪問 `GPU` 裝置
+3. **協作流程**：`Device Plugin` 設定環境變數 (如 `NVIDIA_VISIBLE_DEVICES`)，`Container Toolkit` 根據這些環境變數配置容器的 `GPU` 訪問許可權
 
 #### 8.2.2 RuntimeClass 配置
 
-**RuntimeClass 资源定义**：
+**RuntimeClass 資源定義**：
 
 ```yaml
-# nvidia-runtimeclass.yaml — RuntimeClass 的合法字段只有 handler、overhead、scheduling（scheduling 下仅 nodeSelector 与 tolerations）
+# nvidia-runtimeclass.yaml — RuntimeClass 的合法字段只有 handler、overhead、scheduling（scheduling 下僅 nodeSelector 與 tolerations）
 apiVersion: node.k8s.io/v1
 kind: RuntimeClass
 metadata:
   name: nvidia
-handler: nvidia   # 对应 containerd/docker 配置里的 nvidia 低层运行时名；CDI 模式下运行时名可保持 nvidia，与默认运行时共用
-scheduling:       # 可选：限制只有装了 toolkit 的节点可被调度到
+handler: nvidia   # 對應 containerd/docker 配置里的 nvidia 低層執行時名；CDI 模式下執行時名可保持 nvidia，與預設執行時共用
+scheduling:       # 可選：限制只有裝了 toolkit 的節點可被排程到
   nodeSelector:
     nvidia.com/gpu.deploy.container-toolkit: "true"
   tolerations:
@@ -2128,17 +2128,17 @@ spec:
 
 #### 8.2.3 CDI 集成模式
 
-**CDI 规范生成**：
+**CDI 規範生成**：
 
 ```bash
-# 生成 CDI 规范
+# 生成 CDI 規範
 nvidia-ctk cdi generate \
     --output=/etc/cdi/nvidia.yaml \
     --format=yaml \
     --device-name-strategy=uuid
 ```
 
-**生成的 CDI 规范示例**：
+**生成的 CDI 規範示例**：
 
 ```yaml
 # /etc/cdi/nvidia.yaml
@@ -2186,9 +2186,9 @@ spec:
       command: ["nvidia-smi"]
 ```
 
-### 8.3 容器编排系统配置管理
+### 8.3 容器編排系統配置管理
 
-#### 8.3.1 自动化配置工具
+#### 8.3.1 自動化配置工具
 
 **`nvidia-ctk` 配置命令**：
 
@@ -2209,22 +2209,22 @@ nvidia-ctk runtime configure --runtime=crio \
     --set-as-default
 ```
 
-**配置验证**：
+**配置驗證**：
 
 ```bash
-# 验证 Docker 配置
+# 驗證 Docker 配置
 docker info | grep -i runtime
 
-# 验证 containerd 配置
+# 驗證 containerd 配置
 ctr version
 
-# 验证 CRI-O 配置
+# 驗證 CRI-O 配置
 crictl info
 ```
 
-#### 8.3.2 多运行时环境管理
+#### 8.3.2 多執行時環境管理
 
-**运行时选择策略**：
+**執行時選擇策略**：
 
 ```go
 // internal/config/runtime.go
@@ -2251,17 +2251,17 @@ func (r *RuntimeConfig) SelectRuntime() (string, error) {
 }
 
 func (r *RuntimeConfig) autoDetectRuntime() (string, error) {
-    // 检测 Docker
+    // 檢測 Docker
     if _, err := os.Stat("/var/run/docker.sock"); err == nil {
         return "docker", nil
     }
 
-    // 检测 containerd
+    // 檢測 containerd
     if _, err := os.Stat("/run/containerd/containerd.sock"); err == nil {
         return "containerd", nil
     }
 
-    // 检测 CRI-O
+    // 檢測 CRI-O
     if _, err := os.Stat("/var/run/crio/crio.sock"); err == nil {
         return "crio", nil
     }
@@ -2270,19 +2270,19 @@ func (r *RuntimeConfig) autoDetectRuntime() (string, error) {
 }
 ```
 
-### 8.4 高可用性与故障恢复
+### 8.4 高可用性與故障恢復
 
-#### 8.4.1 运行时健康检查
+#### 8.4.1 執行時健康檢查
 
-`NVIDIA Container Toolkit` 提供基本的运行时健康检查功能，确保底层容器运行时正常工作：
+`NVIDIA Container Toolkit` 提供基本的執行時健康檢查功能，確保底層容器執行時正常工作：
 
-- **检查机制**：通过检测容器运行时的 `socket` 文件和基本连接状态
-- **支持的运行时**：`Docker`、`containerd`、`CRI-O`
-- **故障检测**：检测运行时服务是否可用，为故障恢复提供基础
+- **檢查機制**：透過檢測容器執行時的 `socket` 檔案和基本連線狀態
+- **支援的執行時**：`Docker`、`containerd`、`CRI-O`
+- **故障檢測**：檢測執行時服務是否可用，為故障恢復提供基礎
 
-#### 8.4.2 配置备份与恢复
+#### 8.4.2 配置備份與恢復
 
-**配置备份策略**：
+**配置備份策略**：
 
 ```bash
 #!/bin/bash
@@ -2291,20 +2291,20 @@ func (r *RuntimeConfig) autoDetectRuntime() (string, error) {
 BACKUP_DIR="/etc/nvidia-container-toolkit/backup"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# 创建备份目录
+# 建立備份目錄
 mkdir -p "$BACKUP_DIR"
 
-# 备份 Docker 配置
+# 備份 Docker 配置
 if [ -f "/etc/docker/daemon.json" ]; then
     cp "/etc/docker/daemon.json" "$BACKUP_DIR/docker_daemon_${TIMESTAMP}.json"
 fi
 
-# 备份 containerd 配置
+# 備份 containerd 配置
 if [ -f "/etc/containerd/config.toml" ]; then
     cp "/etc/containerd/config.toml" "$BACKUP_DIR/containerd_config_${TIMESTAMP}.toml"
 fi
 
-# 备份 CRI-O 配置
+# 備份 CRI-O 配置
 if [ -f "/etc/crio/crio.conf" ]; then
     cp "/etc/crio/crio.conf" "$BACKUP_DIR/crio_config_${TIMESTAMP}.conf"
 fi
@@ -2312,11 +2312,11 @@ fi
 echo "Configuration backup completed: $BACKUP_DIR"
 ```
 
-### 8.5 性能监控与调优
+### 8.5 效能監控與調優
 
-#### 8.5.1 运行时性能指标
+#### 8.5.1 執行時效能指標
 
-**关键性能指标监控**：
+**關鍵效能指標監控**：
 
 ```go
 // internal/metrics/runtime.go
@@ -2330,14 +2330,14 @@ type RuntimeMetrics struct {
 func (m *RuntimeMetrics) CollectMetrics() error {
     start := time.Now()
 
-    // 测量设备分配时间
+    // 測量裝置分配時間
     allocStart := time.Now()
     if err := m.allocateDevices(); err != nil {
         return err
     }
     m.DeviceAllocationTime = time.Since(allocStart)
 
-    // 测量 Hook 执行时间
+    // 測量 Hook 執行時間
     hookStart := time.Now()
     if err := m.executeHooks(); err != nil {
         return err
@@ -2349,12 +2349,12 @@ func (m *RuntimeMetrics) CollectMetrics() error {
 }
 ```
 
-#### 8.5.2 调优建议
+#### 8.5.2 調優建議
 
-**容器启动优化**：
+**容器啟動最佳化**：
 
 ```yaml
-# 优化的 Kubernetes Deployment
+# 最佳化的 Kubernetes Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -2389,12 +2389,12 @@ spec:
               memory: "2Gi"
               cpu: "1"
           env:
-            # 手写示例：实际由 device plugin 注入 NVIDIA_VISIBLE_DEVICES，Pod 里不必手写
+            # 手寫示例：實際由 device plugin 注入 NVIDIA_VISIBLE_DEVICES，Pod 裡不必手寫
             - name: NVIDIA_VISIBLE_DEVICES
               value: "all"
             - name: NVIDIA_DRIVER_CAPABILITIES
               value: "compute,utility"
-          # 优化容器启动
+          # 最佳化容器啟動
           readinessProbe:
             exec:
               command: ["nvidia-smi"]
@@ -2404,11 +2404,11 @@ spec:
 
 ---
 
-## 9. 安全机制与权限控制
+## 9. 安全機制與許可權控制
 
-### 9.1 权限验证机制
+### 9.1 許可權驗證機制
 
-#### 9.1.1 环境变量权限检查
+#### 9.1.1 環境變數許可權檢查
 
 ```go
 // internal/modifier/modifier.go
@@ -2422,7 +2422,7 @@ func (m *modifier) validatePermissions(spec *specs.Spec) error {
 }
 ```
 
-#### 9.1.2 设备访问控制
+#### 9.1.2 裝置訪問控制
 
 ```go
 // internal/discover/devices.go
@@ -2440,7 +2440,7 @@ func (d *deviceDiscoverer) validateDeviceAccess(devicePath string) error {
 }
 ```
 
-### 9.2 安全配置选项
+### 9.2 安全配置選項
 
 ```toml
 [nvidia-container-cli]
@@ -2453,25 +2453,25 @@ accept-nvidia-visible-devices-envvar-when-unprivileged = false
 
 ---
 
-## 10. 总结
+## 10. 總結
 
-`NVIDIA Container Toolkit`通过分层架构设计，实现了以下核心特性：
+`NVIDIA Container Toolkit`透過分層架構設計，實現了以下核心特性：
 
-1. **模块化设计**：各组件职责清晰，接口标准化
-2. **多模式支持**：`Legacy`、`CDI`、`CSV`三种运行时模式适应不同场景
-3. **标准化集成**：遵循OCI规范，与主流容器运行时无缝集成
-4. **安全可控**：完善的权限验证和设备访问控制机制
+1. **模組化設計**：各元件職責清晰，介面標準化
+2. **多模式支持**：`Legacy`、`CDI`、`CSV`三種執行時模式適應不同場景
+3. **標準化整合**：遵循OCI規範，與主流容器執行時無縫整合
+4. **安全可控**：完善的許可權驗證和裝置訪問控制機制
 
-`NVIDIA Container Toolkit`在技术实现上的主要创新包括：
+`NVIDIA Container Toolkit`在技術實現上的主要創新包括：
 
-1. **CDI规范实现**：率先实现了`Container Device Interface`规范，为容器设备接入提供了标准化方案
-2. **Hook机制设计**：通过OCI Hook机制实现了运行时的动态设备配置，避免了对容器引擎的侵入性修改
-3. **多模式兼容**：同时支持`Legacy`、`CSV`、`CDI`三种运行时模式，确保了向后兼容性和平滑迁移
-4. **设备发现抽象**：通过统一的设备发现接口，支持多种GPU设备类型和配置方式
-5. **MIG支持**：完整支持`Multi-Instance GPU`技术，实现GPU资源的细粒度分割和管理
+1. **CDI規範實現**：率先實現了`Container Device Interface`規範，為容器裝置接入提供了標準化方案
+2. **Hook機制設計**：透過OCI Hook機制實現了執行時的動態裝置配置，避免了對容器引擎的侵入性修改
+3. **多模式兼容**：同時支援`Legacy`、`CSV`、`CDI`三種執行時模式，確保了向後相容性和平滑遷移
+4. **裝置發現抽象**：透過統一的裝置發現介面，支援多種GPU裝置類型和配置方式
+5. **MIG支持**：完整支持`Multi-Instance GPU`技術，實現GPU資源的細粒度分割和管理
 
-`NVIDIA Container Toolkit`作为`GPU`容器化的重要基础设施，其架构设计和实现方式为其他专用硬件的容器化提供了重要参考，推动了整个容器生态系统向更加标准化、安全化的方向发展。
+`NVIDIA Container Toolkit`作為`GPU`容器化的重要基礎設施，其架構設計和實現方式為其他專用硬體的容器化提供了重要參考，推動了整個容器生態系統向更加標準化、安全化的方向发展。
 
 ---
 
-_本文基于`NVIDIA Container Toolkit`的开源代码进行深入分析，通过理论分析与代码解读相结合的方式，全面解析了其架构设计、核心组件、工作流程和技术实现，为读者提供了完整的技术参考。_
+_本文基於`NVIDIA Container Toolkit`的開原始碼進行深入分析，透過理論分析與程式碼解讀相結合的方式，全面解析了其架構設計、核心元件、工作流程和技術實現，為讀者提供了完整的技術參考。_

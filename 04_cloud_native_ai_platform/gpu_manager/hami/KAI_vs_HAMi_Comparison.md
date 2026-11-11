@@ -1,259 +1,259 @@
-# Nvidia KAI Scheduler 功能架构解析
+# Nvidia KAI Scheduler 功能架構解析
 
-本文档深入解析了 NVIDIA KAI Scheduler 的核心架构与关键特性，并将其与异构计算虚拟化中间件 HAMi 进行多维度对比。通过分析两者在系统定位（调度器 vs 中间件）、资源隔离（软隔离 vs 硬隔离）及适用场景（大规模训练 vs 在线推理）上的差异，为构建高效、可靠的 AI 基础设施提供技术选型依据。
+本文件深入解析了 NVIDIA KAI Scheduler 的核心架構與關鍵特性，並將其與異構計算虛擬化中介軟體 HAMi 進行多維度對比。透過分析兩者在系統定位（排程器 vs 中介軟體）、資源隔離（軟隔離 vs 硬隔離）及適用場景（大規模訓練 vs 線上推理）上的差異，為構建高效、可靠的 AI 基礎設施提供技術選型依據。
 
-> 版本口径：本文基于 KAI Scheduler v0.10.0（2025-10 发布）与 HAMi v2.11.0（2026-11-04 发布）撰写，信息截至 2026-11-05。
+> 版本口徑：本文基於 KAI Scheduler v0.10.0（2025-10 发布）與 HAMi v2.11.0（2026-11-04 发布）撰寫，信息截至 2026-11-05。
 
 ---
 
-## 1. KAI Scheduler 架构与功能解析
+## 1. KAI Scheduler 架構與功能解析
 
-KAI Scheduler 是一款专为大规模 AI 与机器学习工作负载定制的 Kubernetes 调度器。它构建于 **kube-batch** 架构体系之上，而非基于 Kubernetes 上游的 **Scheduling Framework** (即 kube-scheduler 的插件化架构)。这种架构选择使其能够采用 **Session (会话)** 模式与 **Action (动作)** 驱动机制，从而在全局视图下进行复杂的资源预留和回填（Backfill）。
+KAI Scheduler 是一款專為大規模 AI 與機器學習工作負載定製的 Kubernetes 排程器。它構建於 **kube-batch** 架構體系之上，而非基於 Kubernetes 上游的 **Scheduling Framework** (即 kube-scheduler 的外掛化架構)。這種架構選擇使其能夠採用 **Session (會話)** 模式與 **Action (動作)** 驅動機制，從而在全域性檢視下進行復雜的資源預留和回填（Backfill）。
 
-KAI Scheduler 旨在突破原生 Kubernetes 调度器在高性能计算（HPC）场景下的瓶颈，重点解决了 **Gang Scheduling**（全量调度）、**细粒度资源共享**以及**多租户公平性策略**等关键问题。相比于关注单个 Pod 调度的原生框架，它更契合**批处理**（Batch）场景对全局最优解的需求。
+KAI Scheduler 旨在突破原生 Kubernetes 排程器在高效能運算（HPC）場景下的瓶頸，重點解決了 **Gang Scheduling**（全量排程）、**細粒度資源共享**以及**多租戶公平性策略**等關鍵問題。相比於關注單個 Pod 排程的原生框架，它更契合**批處理**（Batch）場景對全域性最優解的需求。
 
-### 1.1 架构渊源与组件交互
+### 1.1 架構淵源與元件互動
 
-KAI Scheduler 的技术根基源于 **kube-batch** —— Kubernetes 社区早期的批处理调度孵化项目。理解 KAI 的架构，首先需要理解它在 Kubernetes 生态中的位置及其与核心组件的交互关系。
+KAI Scheduler 的技術根基源於 **kube-batch** —— Kubernetes 社群早期的批處理排程孵化專案。理解 KAI 的架構，首先需要理解它在 Kubernetes 生態中的位置及其與核心元件的互動關係。
 
-#### 1.1.1 kube-batch 的遗产与继承
+#### 1.1.1 kube-batch 的遺產與繼承
 
-`kube-batch` 是 Kubernetes 生态中首个引入 **PodGroup (任务组)** 概念的调度器，旨在解决 AI/HPC 场景下 "All-or-Nothing" 的调度需求。KAI Scheduler 继承并发扬了 `kube-batch` 的核心设计理念：
+`kube-batch` 是 Kubernetes 生態中首個引入 **PodGroup (任務組)** 概念的排程器，旨在解決 AI/HPC 場景下 "All-or-Nothing" 的排程需求。KAI Scheduler 繼承併發揚了 `kube-batch` 的核心設計理念：
 
-- **领域模型复用**: 沿用了 `Queue` (队列)、`PodGroup` (任务组) 等批处理原语，支持多租户环境下的资源配额管理。
-- **架构扩展**: 在保留 kube-batch 优秀的插件化接口 (`Session-Plugin-Action`) 基础上，KAI 深度扩展了对异构硬件（GPU/NPU）的感知能力、拓扑感知调度 (TAS) 以及更复杂的抢占与公平性算法，使其从一个通用的批处理调度器进化为专用的 AI 算力调度引擎。
+- **領域模型複用**: 沿用了 `Queue` (佇列)、`PodGroup` (任務組) 等批處理原語，支援多租戶環境下的資源配額管理。
+- **架構擴展**: 在保留 kube-batch 優秀的外掛化介面 (`Session-Plugin-Action`) 基礎上，KAI 深度擴展了對異構硬體（GPU/NPU）的感知能力、拓撲感知排程 (TAS) 以及更復雜的搶佔與公平性演算法，使其從一個通用的批處理排程器進化為專用的 AI 算力排程引擎。
 
-#### 1.1.2 核心组件交互逻辑
+#### 1.1.2 核心元件互動邏輯
 
-在运行态，KAI Scheduler 与 Kubernetes 集群组件保持着紧密而高效的交互：
+在執行態，KAI Scheduler 與 Kubernetes 叢集元件保持著緊密而高效的互動：
 
-1. **数据摄入 (Ingestion)**: KAI Scheduler 通过 Kubernetes 原生的 `List-Watch` 机制，实时监听 `Pod`、`Node`、`PodGroup`、`Queue` 等资源对象的变更事件。
-2. **本地缓存 (Local Cache)**: 不同于直接查询 API Server，KAI 维护了一个高度优化的本地内存视图。所有监听到的事件首先更新本地缓存。这种设计大幅降低了 API Server 的负载，并允许调度器在微秒级完成成千上万次模拟调度计算。
-3. **决策输出 (Binding)**: 一旦调度周期完成并产出决策，KAI Scheduler 会通过异步客户端向 API Server 发送 `Bind` 请求，将 Pod 绑定到选定的 Node，完成调度闭环。
+1. **資料攝入 (Ingestion)**: KAI Scheduler 透過 Kubernetes 原生的 `List-Watch` 機制，實時監聽 `Pod`、`Node`、`PodGroup`、`Queue` 等資源物件的變更事件。
+2. **本地快取 (Local Cache)**: 不同於直接查詢 API Server，KAI 維護了一個高度最佳化的本地記憶體檢視。所有監聽到的事件首先更新本地快取。這種設計大幅降低了 API Server 的負載，並允許排程器在微秒級完成成千上萬次模擬排程計算。
+3. **決策輸出 (Binding)**: 一旦排程週期完成併產出決策，KAI Scheduler 會透過非同步客戶端向 API Server 发送 `Bind` 請求，將 Pod 繫結到選定的 Node，完成排程閉環。
 
-### 1.2 核心调度流程
+### 1.2 核心排程流程
 
-不同于原生 Kubernetes 调度器的事件驱动模型，KAI Scheduler 采用了周期性（Cycle-based）调度模型，通过快照机制确保了调度决策的全局一致性。其核心调度流程在一个闭环周期内完成，主要包含四个阶段：
+不同於原生 Kubernetes 排程器的事件驅動模型，KAI Scheduler 采用了周期性（Cycle-based）排程模型，透過快照機制確保了排程決策的全域性一致性。其核心排程流程在一個閉環週期內完成，主要包含四個階段：
 
-1. **Cache Sync (缓存同步)**：实时同步 Kubernetes API Server 的资源状态至调度器内部缓存。
-2. **Snapshot (快照)**：在每个调度周期伊始捕获集群状态快照。该机制有效隔离了并发修改，消除了调度计算过程中的竞态条件。
-3. **Session (会话)**：基于快照构建独立的调度会话上下文，所有调度指令均在此上下文中封装执行。
-4. **Actions (调度动作)**：通过插件化架构按序执行调度动作，核心动作包括：
-   - `Allocate`: 执行核心资源分配逻辑。
-   - `Preempt`: 触发高优先级任务对低优先级资源的抢占。
-   - `Reclaim`: 基于公平性策略回收超额占用的资源。
-   - `Backfill`: 利用碎片资源对小任务进行回填调度。
+1. **Cache Sync (快取同步)**：實時同步 Kubernetes API Server 的資源狀態至排程器內部快取。
+2. **Snapshot (快照)**：在每個排程週期伊始捕獲叢集狀態快照。該機制有效隔離了併發修改，消除了排程計算過程中的競態條件。
+3. **Session (會話)**：基於快照構建獨立的排程會話上下文，所有排程指令均在此上下文中封裝執行。
+4. **Actions (排程動作)**：透過外掛化架構按序執行排程動作，核心動作包括：
+   - `Allocate`: 執行核心資源分配邏輯。
+   - `Preempt`: 觸發高優先順序任務對低優先順序資源的搶佔。
+   - `Reclaim`: 基於公平性策略回收超額佔用的資源。
+   - `Backfill`: 利用碎片資源對小任務進行回填排程。
 
 ```go
-// 调度主循环逻辑 (基于 pkg/scheduler/scheduler.go 简化)
+// 排程主迴圈邏輯 (基於 pkg/scheduler/scheduler.go 簡化)
 func (s *Scheduler) Run(stopCh <-chan struct{}) {
-    // 1. 启动缓存并等待同步完成
+    // 1. 啟動快取並等待同步完成
     s.cache.Run(stopCh)
     s.cache.WaitForCacheSync(stopCh)
 
-    // 2. 周期性执行调度逻辑
+    // 2. 週期性執行排程邏輯
     wait.Until(s.runOnce, s.schedulePeriod, stopCh)
 }
 
 func (s *Scheduler) runOnce() {
-    // 3. 生成会话 ID (SessionID) 用于全链路追踪
+    // 3. 生成會話 ID (SessionID) 用於全鏈路追蹤
     sessionId := generateSessionID()
 
-    // 4. 打开会话 (Open Session): 构建快照并加载插件
-    // OpenSession 会初始化插件并调用 OnSessionOpen
+    // 4. 開啟會話 (Open Session): 構建快照並載入外掛
+    // OpenSession 會初始化外掛並呼叫 OnSessionOpen
     ssn, err := framework.OpenSession(s.cache, s.config, sessionId)
     if err != nil {
         return
     }
-    // 确保会话结束时清理资源并触发插件的 OnSessionClose
+    // 確保會話結束時清理資源並觸發外掛的 OnSessionClose
     defer framework.CloseSession(ssn)
 
-    // 5. 按序执行配置的调度动作 (Actions)
+    // 5. 按序執行配置的排程動作 (Actions)
     actions := conf_util.GetActionsFromConfig(s.config)
     for _, action := range actions {
-        // 设置当前动作上下文 (用于日志与监控)
+        // 設定當前動作上下文 (用於日誌與監控)
         log.SetAction(action.Name())
         metrics.SetCurrentAction(action.Name())
 
-        // 执行具体动作 (如 Allocate, Preempt, Backfill)
+        // 執行具體動作 (如 Allocate, Preempt, Backfill)
         action.Execute(ssn)
     }
 }
 ```
 
-### 1.3 关键特性
+### 1.3 關鍵特性
 
 #### 1.3.1 Gang Scheduling (PodGroups)
 
-针对分布式训练任务（如 Parameter Server 架构），KAI Scheduler 引入了 `PodGroup` 资源对象以实现 "All-or-Nothing" 的调度语义。该特性确保任务的所有组件能够同时获得资源并启动，从根本上解决了因资源死锁导致的训练停滞问题，显著提升了集群的作业完成率。
+針對分散式訓練任務（如 Parameter Server 架構），KAI Scheduler 引入了 `PodGroup` 資源物件以實現 "All-or-Nothing" 的排程語義。該特性確保任務的所有元件能夠同時獲得資源並啟動，從根本上解決了因資源死鎖導致的訓練停滯問題，顯著提升了叢集的作業完成率。
 
-#### 1.3.2 多级队列与公平性 (Hierarchical Queues & Fairness)
+#### 1.3.2 多級佇列與公平性 (Hierarchical Queues & Fairness)
 
-系统支持树状层级队列管理，并基于 DRF (Dominant Resource Fairness) 算法实现精细化的资源公平调度。这不仅通过应得配额（Deserved Quota）保障了队列的基础资源供给，还允许在集群空闲时进行超额借用（Over-quota）。此外，引入的时间感知公平（Time-aware Fairness）机制通过计算历史资源消耗的权重，防止特定租户长期霸占资源，从而实现了长周期维度的真正公平。
+系統支援樹狀層級佇列管理，並基於 DRF (Dominant Resource Fairness) 演算法實現精細化的資源公平排程。這不僅透過應得配額（Deserved Quota）保障了佇列的基礎資源供給，還允許在叢集空閒時進行超額借用（Over-quota）。此外，引入的時間感知公平（Time-aware Fairness）機制透過計算歷史資源消耗的權重，防止特定租戶長期霸佔資源，從而實現了長週期維度的真正公平。
 
-#### 1.3.3 拓扑感知调度 (Topology Aware Scheduling, TAS)
+#### 1.3.3 拓撲感知排程 (Topology Aware Scheduling, TAS)
 
-针对大模型训练对互联带宽的苛刻要求，原生集成物理拓扑感知能力（如 Rack, Zone 维度）：
+針對大模型訓練對互聯頻寬的苛刻要求，原生整合物理拓撲感知能力（如 Rack, Zone 維度）：
 
-- **Bin-packing (装箱策略)**: 优先将任务调度至同一拓扑域，最大化减少跨域通信。
-- **Node Ordering (节点优选)**: 在选定拓扑域内，基于亲和性对节点进行排序，降低节点间通信延迟。
+- **Bin-packing (裝箱策略)**: 優先將任務排程至同一拓撲域，最大化減少跨域通訊。
+- **Node Ordering (節點優選)**: 在選定拓撲域內，基於親和性對節點進行排序，降低節點間通訊延遲。
 
-#### 1.3.4 GPU 共享与动态资源分配
+#### 1.3.4 GPU 共享與動態資源分配
 
-在资源复用方面，KAI Scheduler 支持物理 GPU 的逻辑切分，允许用户通过注解声明算力比例或显存额度（Fractional Request）。其实现采用软隔离（Soft Isolation）机制，依赖应用层的协作或配合 NVIDIA MPS 技术。同时，它全面兼容 Kubernetes DRA (Dynamic Resource Allocation) 架构，为管理第三方异构硬件资源提供了标准化的扩展接口。
-
----
-
-## 2. HAMi 架构与功能解析
-
-HAMi (Heterogeneous AI Computing Virtualization Middleware) 定位为异构 AI 计算虚拟化中间件。与调度器不同，HAMi 聚焦于**设备层的虚拟化**与**异构硬件的统一管理**，旨在消除不同异构设备之间的差异，提供统一的管理接口。
-
-### 2.1 核心架构与隔离机制
-
-HAMi 采用 `MutatingWebhook` + `Scheduler Extender` + `Device Plugin` 的非侵入式架构，作为原生调度器的能力增强插件运行。其最显著的特性是**硬隔离 (Hard Isolation)**，通过底层库劫持（Library Interposition）等容器内虚拟化技术，实时拦截并审查 CUDA API 调用。这一机制强制实施了显存配额与算力核心限制，确保了多租户环境下的资源安全边界，有效防止了越界使用。
-
-### 2.2 异构资源管理
-
-在资源管理层面，HAMi 提供了极细粒度的控制能力。它支持按固定大小 (`nvidia.com/gpumem`) 或百分比 (`nvidia.com/gpumem-percentage`) 分配显存，以及按百分比分配 GPU 算力核心 (`nvidia.com/gpucores`)。
-
-此外，HAMi 构建了统一的异构设备抽象层，除 NVIDIA GPU 外，还广泛支持华为 Ascend NPU、寒武纪 MLU、海光 DCU、天数智芯 CoreX、摩尔线程及沐曦等主流国产 AI 芯片。这种广泛的兼容性使其成为混合硬件环境下的理想管理工具。
-
-### 2.3 调度增强
-
-虽然作为中间件，HAMi 也提供了一系列调度增强能力以优化分配效率。这包括优先减少碎片的 Binpack 策略、实现负载均衡的 Spread 策略，以及确保 GPU 和 CPU 在同一 NUMA 节点以减少延迟的 NUMA-First 策略。它还允许用户通过注解指定所需的 GPU 型号或具体 UUID，提供了灵活的资源绑定能力。
-
-此外，HAMi 注重系统的易用性与配置灵活性。它提供了可视化 WebUI (v2.4+) 以便管理员直观监控资源状态，并支持全局、节点级及 Pod 级的三级配置策略，允许针对不同集群区域灵活调整资源隔离与超卖策略。
+在資源複用方面，KAI Scheduler 支持物理 GPU 的邏輯切分，允許使用者透過註解宣告算力比例或顯存額度（Fractional Request）。其實現採用軟隔離（Soft Isolation）機制，依賴應用層的協作或配合 NVIDIA MPS 技術。同時，它全面兼容 Kubernetes DRA (Dynamic Resource Allocation) 架構，為管理第三方異構硬體資源提供了標準化的擴展介面。
 
 ---
 
-## 3. KAI Scheduler 与 HAMi 对比分析
+## 2. HAMi 架構與功能解析
 
-### 3.1 核心能力对比
+HAMi (Heterogeneous AI Computing Virtualization Middleware) 定位為異構 AI 計算虛擬化中介軟體。與排程器不同，HAMi 聚焦於**裝置層的虛擬化**與**異構硬體的統一管理**，旨在消除不同異構裝置之間的差異，提供統一的管理介面。
 
-| **特性维度**     | **KAI Scheduler**                                   | **HAMi**                                           |
+### 2.1 核心架構與隔離機制
+
+HAMi 采用 `MutatingWebhook` + `Scheduler Extender` + `Device Plugin` 的非侵入式架構，作為原生排程器的能力增強外掛執行。其最顯著的特性是**硬隔離 (Hard Isolation)**，透過底層庫劫持（Library Interposition）等容器內虛擬化技術，實時攔截並審查 CUDA API 呼叫。這一機制強制實施了顯存配額與算力核心限制，確保了多租戶環境下的資源安全邊界，有效防止了越界使用。
+
+### 2.2 異構資源管理
+
+在資源管理層面，HAMi 提供了極細粒度的控制能力。它支持按固定大小 (`nvidia.com/gpumem`) 或百分比 (`nvidia.com/gpumem-percentage`) 分配顯存，以及按百分比分配 GPU 算力核心 (`nvidia.com/gpucores`)。
+
+此外，HAMi 構建了統一的異構裝置抽象層，除 NVIDIA GPU 外，還廣泛支援華為 Ascend NPU、寒武紀 MLU、海光 DCU、天數智芯 CoreX、摩爾執行緒及沐曦等主流國產 AI 芯片。這種廣泛的相容性使其成為混合硬體環境下的理想管理工具。
+
+### 2.3 排程增強
+
+雖然作為中介軟體，HAMi 也提供了一系列排程增強能力以最佳化分配效率。這包括優先減少碎片的 Binpack 策略、實現負載均衡的 Spread 策略，以及確保 GPU 和 CPU 在同一 NUMA 節點以減少延遲的 NUMA-First 策略。它還允許使用者透過註解指定所需的 GPU 型號或具體 UUID，提供了靈活的資源繫結能力。
+
+此外，HAMi 注重系統的易用性與配置靈活性。它提供了視覺化 WebUI (v2.4+) 以便管理員直觀監控資源狀態，並支援全域性、節點級及 Pod 級的三級配置策略，允許針對不同叢集區域靈活調整資源隔離與超賣策略。
+
+---
+
+## 3. KAI Scheduler 與 HAMi 對比分析
+
+### 3.1 核心能力對比
+
+| **特性維度**     | **KAI Scheduler**                                   | **HAMi**                                           |
 | :--------------- | :-------------------------------------------------- | :------------------------------------------------- |
-| **系统定位**     | 面向 AI/Batch 任务的**全量调度器** (Scheduler)      | 面向设备虚拟化与隔离的**中间件** (Middleware)      |
-| **架构模式**     | 独立/替换式架构 (基于 kube-batch)                   | 插件/扩展式架构 (Extender + Webhook)               |
-| **GPU 隔离级别** | **软隔离** (Soft Isolation)，侧重逻辑分配，依赖协作 | **硬隔离** (Hard Isolation)，基于 API 拦截强制限制 |
-| **公平性策略**   | **作业级公平**，支持多级队列、DRF 及 Time-aware     | **设备级公平**，侧重物理设备切分利用率             |
-| **拓扑感知**     | **原生集成** (TAS)，内建拓扑优选，路径更短          | **扩展支持**，通过策略实现，效率略逊原生           |
-| **生态兼容性**   | **NVIDIA 深度优化**，官方维护                       | **多厂商异构**，广泛支持国产芯片                   |
-| **作业编排**     | **强**，原生支持 Gang Scheduling 及抢占             | **中**，依赖底层调度器能力                         |
-| **资源粒度**     | **粗/中粒度**，以 GPU 数量或大块显存为主            | **极细粒度**，支持按百分比、具体显存大小切分       |
+| **系統定位**     | 面向 AI/Batch 任務的**全量排程器** (Scheduler)      | 面向裝置虛擬化與隔離的**中介軟體** (Middleware)      |
+| **架構模式**     | 獨立/替換式架構 (基於 kube-batch)                   | 插件/擴展式架構 (Extender + Webhook)               |
+| **GPU 隔離級別** | **軟隔離** (Soft Isolation)，側重邏輯分配，依賴協作 | **硬隔離** (Hard Isolation)，基於 API 攔截強制限制 |
+| **公平性策略**   | **作業級公平**，支援多級佇列、DRF 及 Time-aware     | **裝置級公平**，側重物理裝置切分利用率             |
+| **拓撲感知**     | **原生集成** (TAS)，內建拓撲優選，路徑更短          | **擴展支援**，透過策略實現，效率略遜原生           |
+| **生態相容性**   | **NVIDIA 深度最佳化**，官方維護                       | **多廠商異構**，廣泛支援國產晶片                   |
+| **作業編排**     | **強**，原生支持 Gang Scheduling 及搶佔             | **中**，依賴底層排程器能力                         |
+| **資源粒度**     | **粗/中粒度**，以 GPU 數量或大塊顯存為主            | **極細粒度**，支持按百分比、具體顯存大小切分       |
 
-### 3.2 深度技术差异解析
+### 3.2 深度技術差異解析
 
-#### 3.2.1 调度哲学与决策范围
+#### 3.2.1 排程哲學與決策範圍
 
-**KAI Scheduler** 扮演的是**全局决策者**的角色。它接管了 Pod 的全生命周期管理，具备为了全局最优（如 Gang Scheduling 的资源预留）而推迟部分任务调度的能力。其设计目标是优化整个集群在多租户、高并发场景下的作业吞吐量与资源公平性。相比之下，**HAMi** 扮演的是**资源增强层**的角色。它通过虚拟化技术将物理 GPU 映射为多个 vGPU，从而“欺骗”Kubernetes 原生调度器。它不改变 Kubernetes 的核心调度逻辑，而是致力于提升底层资源的分配灵活性与利用率。
+**KAI Scheduler** 扮演的是**全域性決策者**的角色。它接管了 Pod 的全生命周期管理，具備為了全域性最優（如 Gang Scheduling 的資源預留）而推遲部分任務排程的能力。其設計目標是最佳化整個叢集在多租戶、高併發場景下的作業吞吐量與資源公平性。相比之下，**HAMi** 扮演的是**資源增強層**的角色。它透過虛擬化技術將物理 GPU 對映為多個 vGPU，從而“欺騙”Kubernetes 原生排程器。它不改變 Kubernetes 的核心排程邏輯，而是致力於提升底層資源的分配靈活性與利用率。
 
-#### 3.2.2 资源隔离机制的本质区别
+#### 3.2.2 資源隔離機制的本質區別
 
-**KAI** 的 GPU 共享机制本质上是一种**调度层面的记账（Accounting）**。例如，当分配 `0.5` GPU 时，调度器确保同一物理卡上仅调度两个此类 Pod。若应用发生显存泄漏或越界使用，KAI 调度器层面无法进行运行时的强制拦截。而 **HAMi** 的核心优势在于**运行时虚拟化**。它在容器启动时注入特定的动态链接库，实时拦截并审查 CUDA 内存申请。若申请量超过配额，API 调用将直接返回失败。这种机制在不可信的多租户环境中提供了必要的安全保障。
+**KAI** 的 GPU 共享機制本質上是一種**排程層面的記賬（Accounting）**。例如，當分配 `0.5` GPU 時，排程器確保同一物理卡上僅排程兩個此類 Pod。若應用發生顯存洩漏或越界使用，KAI 排程器層面無法進行執行時的強制攔截。而 **HAMi** 的核心優勢在於**執行時虛擬化**。它在容器啟動時注入特定的動態連結庫，實時攔截並審查 CUDA 記憶體申請。若申請量超過配額，API 呼叫將直接返回失敗。這種機制在不可信的多租戶環境中提供了必要的安全保障。
 
-#### 3.2.3 公平性维度的侧重
+#### 3.2.3 公平性維度的側重
 
-**KAI** 聚焦于**组织/租户层面的公平性**，通过多级队列模型解决“部门 A 与部门 B 资源争抢”的问题，支持复杂的借用与归还机制。**HAMi** 则聚焦于**设备层面的切分效率**，致力于解决“如何将单张 GPU 卡高效切分给多个小任务”的问题，侧重于提升单卡的利用率。
+**KAI** 聚焦於**組織/租戶層面的公平性**，透過多級佇列模型解決“部門 A 與部門 B 資源爭搶”的問題，支援複雜的借用與歸還機制。**HAMi** 則聚焦於**裝置層面的切分效率**，致力於解決“如何將單張 GPU 卡高效切分給多個小任務”的問題，側重於提升單卡的利用率。
 
-### 3.3 场景化适用性分析
+### 3.3 場景化適用性分析
 
-#### 3.3.1 AI 训练场景 (Training)
+#### 3.3.1 AI 訓練場景 (Training)
 
-在模型训练，尤其是**大规模分布式训练**（如 LLM 预训练、微调）场景下，**KAI Scheduler** 具有压倒性优势。
+在模型訓練，尤其是**大規模分散式訓練**（如 LLM 預訓練、微調）場景下，**KAI Scheduler** 具有壓倒性優勢。
 
-- **核心挑战**: 资源死锁、网络带宽瓶颈、多租户资源争抢。
-- **KAI Scheduler 优势**:
-  - **Gang Scheduling**: 原生支持 PodGroup，确保分布式任务的所有 Worker 能够 "All-or-Nothing" 启动，彻底根除死锁风险。
-  - **拓扑感知 (TAS)**: 对于通信密集型训练任务，KAI 能将 Pod 调度到同一交换机或机架下，显著降低 AllReduce 通信延迟，提升训练效率。
-  - **公平性保障**: 基于 DRF 的队列管理机制，确保了不同部门或项目组在共享大集群时的资源公平性，避免算力被单一业务独占。
-- **HAMi 局限性**: 缺乏全局视角的 Gang Scheduling 能力，容易导致分布式任务的部分 Pod 等待资源而部分 Pod 空转。
+- **核心挑戰**: 資源死鎖、網路頻寬瓶頸、多租戶資源爭搶。
+- **KAI Scheduler 優勢**:
+  - **Gang Scheduling**: 原生支持 PodGroup，確保分散式任務的所有 Worker 能夠 "All-or-Nothing" 啟動，徹底根除死鎖風險。
+  - **拓撲感知 (TAS)**: 對於通訊密集型訓練任務，KAI 能將 Pod 排程到同一交換機或機架下，顯著降低 AllReduce 通訊延遲，提升訓練效率。
+  - **公平性保障**: 基於 DRF 的佇列管理機制，確保了不同部門或專案組在共享大叢集時的資源公平性，避免算力被單一業務獨佔。
+- **HAMi 局限性**: 缺乏全域性視角的 Gang Scheduling 能力，容易導致分散式任務的部分 Pod 等待資源而部分 Pod 空轉。
 
-#### 3.3.2 AI 推理场景 (Inference)
+#### 3.3.2 AI 推理場景 (Inference)
 
-在**在线推理**与**开发调试**场景下，**HAMi** 往往是更优的选择。
+在**線上推理**與**開發除錯**場景下，**HAMi** 往往是更優的選擇。
 
-- **核心挑战**: 资源碎片化、服务间干扰、异构硬件适配。
-- **HAMi 优势**:
-  - **强隔离保障 SLA**: 推理服务通常对稳定性要求极高。HAMi 的显存硬隔离机制能防止因某个服务 OOM 而导致同一张卡上的其他推理服务崩溃，保障业务 SLA。
-  - **极致资源利用率**: 推理任务通常无法占满整卡。HAMi 支持细粒度切分（如分配 10% 算力 + 2GB 显存），允许在单张高性能卡（如 A100）上混部数十个小模型推理服务。
-  - **异构推理卡支持**: 推理侧硬件选型多样（如 T4, A10, Ascend 310 等）。HAMi 广泛的硬件兼容性使其能统一纳管各类异构推理芯片。
-- **KAI Scheduler 局限性**: 软隔离机制在不可信的多租户推理场景下存在安全隐患；缺乏对非 NVIDIA 推理卡的深度支持。
+- **核心挑戰**: 資源碎片化、服務間干擾、異構硬體適配。
+- **HAMi 優勢**:
+  - **強隔離保障 SLA**: 推理服務通常對穩定性要求極高。HAMi 的顯存硬隔離機制能防止因某個服務 OOM 而導致同一張卡上的其他推理服務崩潰，保障業務 SLA。
+  - **極致資源利用率**: 推理任務通常無法佔滿整卡。HAMi 支援細粒度切分（如分配 10% 算力 + 2GB 顯存），允許在單張高效能卡（如 A100）上混部數十個小模型推理服務。
+  - **異構推理卡支援**: 推理側硬體選型多樣（如 T4, A10, Ascend 310 等）。HAMi 廣泛的硬體相容性使其能統一納管各類異構推理晶片。
+- **KAI Scheduler 局限性**: 軟隔離機制在不可信的多租戶推理場景下存在安全隱患；缺乏對非 NVIDIA 推理卡的深度支持。
 
-### 3.4 选型建议与总结
+### 3.4 選型建議與總結
 
-在实际架构设计中，建议根据**业务核心属性**进行分层决策：
+在實際架構設計中，建議根據**業務核心屬性**進行分層決策：
 
-1. **大规模训练集群 (Training Cluster)**:
+1. **大規模訓練叢集 (Training Cluster)**:
 
-   - **首选 KAI Scheduler**。核心诉求是算力吞吐与作业编排，需依赖其 Gang Scheduling 与 TAS 能力。
-   - **可选搭配**: 若需在训练集群中混部少量调试任务，可引入 HAMi 作为辅助，但需注意调度器冲突。
+   - **首選 KAI Scheduler**。核心訴求是算力吞吐與作業編排，需依賴其 Gang Scheduling 與 TAS 能力。
+   - **可選搭配**: 若需在訓練叢集中混部少量除錯任務，可引入 HAMi 作為輔助，但需注意排程器衝突。
 
-2. **推理与开发集群 (Inference/Dev Cluster)**:
+2. **推理與開發叢集 (Inference/Dev Cluster)**:
 
-   - **首选 HAMi**。核心诉求是资源利用率与安全隔离。利用其硬隔离特性实现高密度混部，降低单位推理成本。
+   - **首選 HAMi**。核心訴求是資源利用率與安全隔離。利用其硬隔離特性實現高密度混部，降低單位推理成本。
 
-3. **混合业务集群**:
-   - 建议采用 **"KAI Scheduler (主) + HAMi (辅)"** 的联合部署模式。
-   - 利用 KAI Scheduler 处理宏观的队列管理与大任务编排。
-   - 利用 HAMi 处理节点内的细粒度切分与隔离。
-   - **注意**: 需精细配置 Resource Name（如 KAI 使用 `nvidia.com/gpu`，HAMi 使用 `nvidia.com/gpumem`），避免资源核算的冲突。
+3. **混合業務叢集**:
+   - 建議採用 **"KAI Scheduler (主) + HAMi (輔)"** 的聯合部署模式。
+   - 利用 KAI Scheduler 處理宏觀的佇列管理與大任務編排。
+   - 利用 HAMi 處理節點內的細粒度切分與隔離。
+   - **注意**: 需精細配置 Resource Name（如 KAI 使用 `nvidia.com/gpu`，HAMi 使用 `nvidia.com/gpumem`），避免資源核算的衝突。
 
-### 3.5 前沿探索：社区融合方案（已合入）
+### 3.5 前沿探索：社群融合方案（已合入）
 
-HAMi 社区与 KAI Scheduler 社区探讨了一种更深度的融合方案（Resource isolation 设计，[PR #60](https://github.com/NVIDIA/KAI-Scheduler/pull/60)），已于 2026-06-09 合入 KAI Scheduler 主干。该方案通过解耦的方式，在保留 KAI 调度决策权的同时，引入 HAMi 的底层硬隔离能力。
+HAMi 社群與 KAI Scheduler 社群探討了一種更深度的融合方案（Resource isolation 設計，[PR #60](https://github.com/NVIDIA/KAI-Scheduler/pull/60)），已於 2026-06-09 合入 KAI Scheduler 主干。該方案透過解耦的方式，在保留 KAI 排程決策權的同時，引入 HAMi 的底層硬隔離能力。
 
-**方案架构核心**:
+**方案架構核心**:
 
-该方案不再依赖 HAMi 的 Scheduler Extender，而是将 HAMi 的核心隔离能力 (HAMi Core) 作为独立组件运行：
+該方案不再依賴 HAMi 的 Scheduler Extender，而是將 HAMi 的核心隔離能力 (HAMi Core) 作為獨立元件執行：
 
-1. **组件解耦**:
+1. **元件解耦**:
 
-   - **KAI Scheduler**: 继续负责核心调度逻辑（Gang Scheduling, TAS 等）及资源分配决策。
-   - **HAMi Core**: 以 DaemonSet 形式独立部署，仅负责节点级的动态库分发与底层拦截。
-   - **Mutating Webhook**: 负责拦截 Pod 创建请求，注入 HAMi Core 的挂载路径。
+   - **KAI Scheduler**: 繼續負責核心排程邏輯（Gang Scheduling, TAS 等）及資源分配決策。
+   - **HAMi Core**: 以 DaemonSet 形式獨立部署，僅負責節點級的動態庫分發與底層攔截。
+   - **Mutating Webhook**: 負責攔截 Pod 建立請求，注入 HAMi Core 的掛載路徑。
 
-2. **协同工作流**:
-   - **Step 1 (调度)**: KAI Scheduler 完成调度决策，并将分配的显存大小（Bytes）写入标准环境变量（如 `GPU_MEMORY_LIMIT`）。
-   - **Step 2 (注入)**: Webhook 自动挂载 HAMi Core 的动态链接库到 Pod 容器中。
-   - **Step 3 (运行时)**: 容器启动时加载拦截库，库函数读取 `GPU_MEMORY_LIMIT` 环境变量，在 CUDA API 调用层面强制实施显存硬隔离。
+2. **協同工作流**:
+   - **Step 1 (排程)**: KAI Scheduler 完成排程決策，並將分配的顯存大小（Bytes）寫入標準環境變數（如 `GPU_MEMORY_LIMIT`）。
+   - **Step 2 (注入)**: Webhook 自動掛載 HAMi Core 的動態連結庫到 Pod 容器中。
+   - **Step 3 (執行時)**: 容器啟動時載入攔截庫，庫函式讀取 `GPU_MEMORY_LIMIT` 環境變數，在 CUDA API 呼叫層面強制實施顯存硬隔離。
 
-**方案价值**:
+**方案價值**:
 
-这种模式试图打破“二选一”的局面，实现 **“KAI 的全局编排能力 + HAMi 的运行时硬隔离能力”** 的完美结合，且对 KAI 调度器的代码侵入性极低。
+這種模式試圖打破“二選一”的局面，實現 **“KAI 的全域性編排能力 + HAMi 的執行時硬隔離能力”** 的完美結合，且對 KAI 排程器的程式碼侵入性極低。
 
 ---
 
-## 4. 扩展对比：KAI Scheduler vs Volcano
+## 4. 擴展對比：KAI Scheduler vs Volcano
 
-鉴于 **KAI Scheduler** 与 CNCF 孵化项目 **[Volcano](https://github.com/volcano-sh/volcano)** 均源自 **kube-batch** 架构体系，两者在技术路线上存在一定的亲缘性，但在演进方向与适用场景上已展现出显著差异。
+鑑於 **KAI Scheduler** 與 CNCF 孵化專案 **[Volcano](https://github.com/volcano-sh/volcano)** 均源自 **kube-batch** 架構體系，兩者在技術路線上存在一定的親緣性，但在演進方向與適用場景上已展現出顯著差異。
 
-### 4.1 定位与演进方向差异
+### 4.1 定位與演進方向差異
 
-| **维度**     | **KAI Scheduler**                                                                | **Volcano**                                                                          |
+| **維度**     | **KAI Scheduler**                                                                | **Volcano**                                                                          |
 | :----------- | :------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------- |
-| **核心定位** | **垂直深耕的 AI 算力引擎**                                                       | **通用的云原生批处理平台**                                                           |
-| **目标场景** | 聚焦 **LLM/GenAI** 大规模分布式训练，深度适配 NVIDIA 硬件栈 (GPU/NPU/InfiniBand) | 覆盖 **BigData** (Spark/Flink), **AI**, **HPC**, **基因计算** 等广泛的批处理工作负载 |
-| **生态兼容** | 紧密集成 NVIDIA GPU Operator, DRA, PyTorch 等 AI 生态                            | 广泛支持 Spark Operator, Flink Operator, Argo, Kubeflow 等 CNCF/大数据生态           |
+| **核心定位** | **垂直深耕的 AI 算力引擎**                                                       | **通用的雲原生批處理平台**                                                           |
+| **目標場景** | 聚焦 **LLM/GenAI** 大規模分散式訓練，深度適配 NVIDIA 硬體棧 (GPU/NPU/InfiniBand) | 覆蓋 **BigData** (Spark/Flink), **AI**, **HPC**, **基因計算** 等廣泛的批處理工作負載 |
+| **生態相容** | 緊密整合 NVIDIA GPU Operator, DRA, PyTorch 等 AI 生態                            | 廣泛支援 Spark Operator, Flink Operator, Argo, Kubeflow 等 CNCF/大資料生態           |
 
-### 4.2 核心能力对比
+### 4.2 核心能力對比
 
-- **拓扑感知 (Topology Awareness)**:
+- **拓撲感知 (Topology Awareness)**:
 
-  - **KAI Scheduler**: 拥有 **Native TAS** 能力，针对 NVIDIA 硬件拓扑（NVLink, NVSwitch, InfiniBand 结构）进行了深度定制与优化，能够感知极其细微的硬件互联层级，以极致降低 AI 训练的通信延迟。
-  - **Volcano**: 提供通用的拓扑感知插件，更侧重于 CPU/NUMA 或通用的网络距离，对特定 AI 芯片的私有互联协议优化不如 KAI 深入。
+  - **KAI Scheduler**: 擁有 **Native TAS** 能力，針對 NVIDIA 硬體拓撲（NVLink, NVSwitch, InfiniBand 結構）進行了深度定製與最佳化，能夠感知極其細微的硬體互聯層級，以極致降低 AI 訓練的通訊延遲。
+  - **Volcano**: 提供通用的拓撲感知外掛，更側重於 CPU/NUMA 或通用的網路距離，對特定 AI 晶片的私有互聯協議最佳化不如 KAI 深入。
 
 - **公平性算法 (Fairness)**:
 
-  - **KAI Scheduler**: 引入了 **Time-aware Fairness** (时间感知公平性)，不仅关注当前的资源配额，还追溯历史使用时长，防止长期霸占资源，更适合昂贵的 GPU 算力租赁场景。
-  - **Volcano**: 经典的 DRF (Dominant Resource Fairness) 算法实现，侧重于多资源维度的即时分配公平。
+  - **KAI Scheduler**: 引入了 **Time-aware Fairness** (時間感知公平性)，不僅關注當前的資源配額，還追溯歷史使用時長，防止長期霸佔資源，更適合昂貴的 GPU 算力租賃場景。
+  - **Volcano**: 經典的 DRF (Dominant Resource Fairness) 演算法實現，側重於多資源維度的即時分配公平。
 
-- **作业类型支持**:
-  - **KAI Scheduler**: 针对 AI 训练任务（Training Jobs）进行了特化，对 `All-or-Nothing` 的 Gang Scheduling 做了针对大模型的死锁优化。
-  - **Volcano**: 对数据密集型任务（Data-Intensive）有更好的支持，如 Spark 的 Driver/Executor 模型，支持更丰富的作业插件（Job Plugins）。
+- **作業類型支援**:
+  - **KAI Scheduler**: 針對 AI 訓練任務（Training Jobs）進行了特化，對 `All-or-Nothing` 的 Gang Scheduling 做了針對大模型的死鎖最佳化。
+  - **Volcano**: 對資料密集型任務（Data-Intensive）有更好的支持，如 Spark 的 Driver/Executor 模型，支援更豐富的作業外掛（Job Plugins）。
 
-### 4.3 选型建议
+### 4.3 選型建議
 
-- **选择 KAI Scheduler**: 如果您的集群是 **NVIDIA GPU 专用算力池**，且核心业务是 **LLM 预训练/微调**，追求极致的算力利用率与训练速度，KAI 的垂直优化能力将带来更高的 ROI。
-- **选择 Volcano**: 如果您的集群是 **混合负载集群**（同时运行 Spark 数据处理、Flink 流计算、以及 AI 训练），需要一个统一的批处理调度器来管理多样化的工作负载，Volcano 是更通用且成熟的选择。
+- **選擇 KAI Scheduler**: 如果您的叢集是 **NVIDIA GPU 專用算力池**，且核心業務是 **LLM 預訓練/微調**，追求極致的算力利用率與訓練速度，KAI 的垂直最佳化能力將帶來更高的 ROI。
+- **選擇 Volcano**: 如果您的叢集是 **混合負載叢集**（同時執行 Spark 資料處理、Flink 流計算、以及 AI 訓練），需要一個統一的批處理排程器來管理多樣化的工作負載，Volcano 是更通用且成熟的選擇。
 
 ---

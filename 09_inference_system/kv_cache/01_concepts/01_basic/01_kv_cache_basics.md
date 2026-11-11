@@ -1,80 +1,80 @@
-# KV Cache 原理简介
+# KV Cache 原理簡介
 
-## 1. 背景：大模型推理的挑战
+## 1. 背景：大模型推理的挑戰
 
-在大语言模型（LLM）的推理过程中，尤其是文本生成任务中，模型通常采用自回归（Autoregressive）的方式逐个生成 Token。这种生成机制如果不加以优化，会面临严重的计算效率问题，理解这一基础模式是后续探索性能优化手段的前提。
+在大語言模型（LLM）的推理過程中，尤其是文字生成任務中，模型通常採用自迴歸（Autoregressive）的方式逐個生成 Token。這種生成機制如果不加以最佳化，會面臨嚴重的計算效率問題，理解這一基礎模式是後續探索效能最佳化手段的前提。
 
-### 1.1 自回归生成模式
+### 1.1 自迴歸生成模式
 
-在自回归生成中，模型根据之前的上下文（Context）预测下一个 Token。例如，给定输入 "Hello"，模型预测 "World"；接着给定 "Hello World"，模型预测 "!"。在没有缓存时，模型必须将 "Hello" 等历史上下文重复编码。这意味着每生成一个新的 Token，模型都需要回顾并重新计算之前所有的 Token。
+在自迴歸生成中，模型根據之前的上下文（Context）預測下一個 Token。例如，給定輸入 "Hello"，模型預測 "World"；接著給定 "Hello World"，模型預測 "!"。在沒有快取時，模型必須將 "Hello" 等歷史上下文重複編碼。這意味著每生成一個新的 Token，模型都需要回顧並重新計算之前所有的 Token。
 
-![自回归生成模式](img/fig-1.png)
+![自迴歸生成模式](img/fig-1.png)
 
-### 1.2 重复计算问题
+### 1.2 重複計算問題
 
-如果不使用缓存机制，每生成一个新的 Token，模型都需要将之前所有 Token 重新输入模型，并重新计算它们的 Key (K) 和 Value (V) 矩阵。随着序列长度的增加，这种重复计算若仅看单步前向，无缓存时注意力计算量为 $O(N^2)$，其中 $N$ 为当前序列长度。若考虑从第 1 个 Token 生成到第 $L_{gen}$ 个 Token 的完整过程，累积计算量约为 $O(L_{gen}^3)$，延迟将随生成长度急剧恶化。
+如果不使用快取機制，每生成一個新的 Token，模型都需要將之前所有 Token 重新輸入模型，並重新計算它們的 Key (K) 和 Value (V) 矩陣。隨著序列長度的增加，這種重複計算若僅看單步前向，無快取時注意力計算量為 $O(N^2)$，其中 $N$ 為當前序列長度。若考慮從第 1 個 Token 生成到第 $L_{gen}$ 個 Token 的完整過程，累積計算量約為 $O(L_{gen}^3)$，延遲將隨生成長度急劇惡化。
 
-![重复计算问题](img/fig-2.png)
+![重複計算問題](img/fig-2.png)
 
 ---
 
 ## 2. KV Cache 核心原理
 
-为了解决自回归生成中的重复计算问题，KV Cache 技术通过“空间换时间”的策略，将已计算过的中间结果存储起来，从而避免了大量冗余的矩阵运算，直接降低了单步推理的计算复杂度。
+為了解決自迴歸生成中的重複計算問題，KV Cache 技術透過“空間換時間”的策略，將已計算過的中間結果儲存起來，從而避免了大量冗餘的矩陣運算，直接降低了單步推理的計算複雜度。
 
-> **深入计算过程**：本文聚焦 KV Cache 的工作机制和显存分析。如果想从矩阵形状和计算量层面理解 Prefill 为什么是 compute-bound、Decode 为什么是 memory-bound、以及这些差异如何推导出所有 KV Cache 优化方向，见姊妹篇 [为什么 GPU 生成每个 token 时利用率不到 5%？——Prefill 与 Decode 深度拆解](../../../prefill_decode/prefill_decode_qkv_calculation.md)。
+> **深入計算過程**：本文聚焦 KV Cache 的工作機制和顯存分析。如果想從矩陣形狀和計算量層面理解 Prefill 為什麼是 compute-bound、Decode 為什麼是 memory-bound、以及這些差異如何推匯出所有 KV Cache 最佳化方向，見姊妹篇 [為什麼 GPU 生成每個 token 時利用率不到 5%？——Prefill 與 Decode 深度拆解](../../../prefill_decode/prefill_decode_qkv_calculation.md)。
 
-### 2.1 什么是 KV Cache？
+### 2.1 什麼是 KV Cache？
 
-KV Cache 本质上是一种缓存机制，用于存储 Transformer 模型中 Attention 层的 Key 和 Value 矩阵。在推理过程中，模型只需要计算**当前新生成 Token** 的 Query (Q)、Key (K) 和 Value (V)，然后将新的 K 和 V 追加到缓存中。最后，利用当前的 Q 与**完整的缓存**（历史 K/V + 当前 K/V）进行注意力计算。
+KV Cache 本質上是一種快取機制，用於儲存 Transformer 模型中 Attention 層的 Key 和 Value 矩陣。在推理過程中，模型只需要計算**當前新生成 Token** 的 Query (Q)、Key (K) 和 Value (V)，然後將新的 K 和 V 追加到快取中。最后，利用當前的 Q 與**完整的快取**（历史 K/V + 當前 K/V）進行注意力計算。
 
-> **为什么只缓存 K/V，不缓存 Q？** Q 是「一次性查询」——每个 token 的 Q 只在使用它的那一刻有意义，后续 token 不会再访问。K/V 是被反复检索的「答案库」。详见 [KV Cache 为什么叫 KV Cache？——Q 去哪了](04_why_only_kv.md)。
+> **為什麼只快取 K/V，不快取 Q？** Q 是「一次性查詢」——每個 token 的 Q 只在使用它的那一刻有意義，後續 token 不會再訪問。K/V 是被反覆檢索的「答案庫」。詳見 [KV Cache 為什麼叫 KV Cache？——Q 去哪了](04_why_only_kv.md)。
 
-**有无 KV Cache 的对比：**
-![KV Cache 对比](img/fig-5.png)
+**有無 KV Cache 的對比：**
+![KV Cache 對比](img/fig-5.png)
 
-### 2.2 工作流程详解
+### 2.2 工作流程詳解
 
-KV Cache 的工作流程可以分为两个阶段：
+KV Cache 的工作流程可以分為兩個階段：
 
-1. **Prefill 阶段（首 Token 生成）**：
-   - 模型接收完整的 Prompt 输入。
-   - 计算所有输入 Token 的 K 和 V，并将它们存入 Cache。
-   - 生成第一个输出 Token。
-     ![Prefill 阶段](img/fig-3.png)
+1. **Prefill 階段（首 Token 生成）**：
+   - 模型接收完整的 Prompt 輸入。
+   - 計算所有輸入 Token 的 K 和 V，並將它們存入 Cache。
+   - 生成第一個輸出 Token。
+     ![Prefill 階段](img/fig-3.png)
 
-2. **Decode 阶段（后续 Token 生成）**：
-   - 模型仅接收上一步生成的 Token。
-   - 计算该 Token 的 Q、K、V。
-   - 将新计算的 K、V 追加（Append）到 Cache 中。
-   - 利用完整的 Cache (历史 K/V + 当前 K/V) 计算 Attention。
-   - 生成下一个 Token，循环上述过程。
-     ![Decode 阶段](img/fig-4.png)
+2. **Decode 階段（後續 Token 生成）**：
+   - 模型僅接收上一步生成的 Token。
+   - 計算該 Token 的 Q、K、V。
+   - 將新計算的 K、V 追加（Append）到 Cache 中。
+   - 利用完整的 Cache (历史 K/V + 當前 K/V) 計算 Attention。
+   - 生成下一個 Token，迴圈上述過程。
+     ![Decode 階段](img/fig-4.png)
 
-### 2.3 伪代码示例
+### 2.3 虛擬碼示例
 
-以下是 KV Cache 更新逻辑的简化伪代码表示：
+以下是 KV Cache 更新邏輯的簡化虛擬碼表示：
 
 ```python
-# KV Caching 伪代码示例
-# 采用 HuggingFace 常见的 shape 布局:
+# KV Caching 虛擬碼示例
+# 采用 HuggingFace 常見的 shape 布局:
 # [batch_size, seq_len, num_heads, head_dim]
 class KVCache:
     def __init__(self):
-        # 初始化空的缓存
+        # 初始化空的快取
         self.cache = {"key": None, "value": None}
 
     def update(self, key, value):
         """
-        更新缓存：将新的 Key 和 Value 追加到现有缓存中
+        更新快取：將新的 Key 和 Value 追加到現有快取中
         """
         if self.cache["key"] is None:
-            # 如果缓存为空，直接存储
+            # 如果快取為空，直接儲存
             self.cache["key"] = key
             self.cache["value"] = value
         else:
-            # 否则，在 seq_len 维度上进行拼接（该 shape 下 dim=1）
-            # 注意：具体维度索引取决于不同框架的实现布局
+            # 否則，在 seq_len 維度上進行拼接（該 shape 下 dim=1）
+            # 注意：具體維度索引取決於不同框架的實現佈局
             self.cache["key"] = torch.cat([self.cache["key"], key], dim=1)
             self.cache["value"] = torch.cat([self.cache["value"], value], dim=1)
 
@@ -82,31 +82,31 @@ class KVCache:
         return self.cache
 ```
 
-以上维度仅为示意。若实现采用 `[batch_size, num_heads, seq_len, head_dim]` 等其他布局，应将拼接维度相应调整。
+以上維度僅為示意。若實現採用 `[batch_size, num_heads, seq_len, head_dim]` 等其他布局，應將拼接維度相應調整。
 
-## 3. 显存占用分析
+## 3. 顯存佔用分析
 
-虽然 KV Cache 极大地提升了推理速度，但这种“空间换时间”的做法也带来了显著的显存开销。随着并发请求数（Batch Size）和上下文序列长度的增加，动态增长的缓存数据会占用大量 GPU 显存，成为制约系统吞吐量的核心瓶颈。
+雖然 KV Cache 極大地提升了推理速度，但這種“空間換時間”的做法也帶來了顯著的顯存開銷。隨著併發請求數（Batch Size）和上下文序列長度的增加，動態增長的快取資料會佔用大量 GPU 顯存，成為制約系統吞吐量的核心瓶頸。
 
-> **如何高效管理 KV Cache？** 上述分析解决了“KV Cache 占多少显存”的问题，但另一个同样关键的问题是“怎么存、怎么回收”。传统预分配方案的内存利用率仅 20-40%——大部分显存被碎片浪费。PagedAttention 通过将 KV Cache 切分为固定大小的 block，按需分配、动态映射，将碎片率降到 4% 以下，同等显存可服务 2-4 倍并发。详见 [PagedAttention 原理介绍](02_paged_attention.md)。
+> **如何高效管理 KV Cache？** 上述分析解決了“KV Cache 佔多少顯存”的問題，但另一個同樣關鍵的問題是“怎麼存、怎麼回收”。傳統預分配方案的記憶體利用率僅 20-40%——大部分顯存被碎片浪費。PagedAttention 透過將 KV Cache 切分為固定大小的 block，按需分配、動態對映，將碎片率降到 4% 以下，同等顯存可服務 2-4 倍併發。詳見 [PagedAttention 原理介紹](02_paged_attention.md)。
 
-详细请参考[LLM 模型推理显存占用深度的分析](../../../memory_calc/memory_analysis.md)。
+詳細請參考[LLM 模型推理顯存佔用深度的分析](../../../memory_calc/memory_analysis.md)。
 
-### 3.1 显存占用的主要构成
+### 3.1 顯存佔用的主要構成
 
-在 LLM 推理中，显存主要被以下三部分占用：
+在 LLM 推理中，顯存主要被以下三部分佔用：
 
-1. **模型权重 (Model Weights)**：静态占用，取决于模型参数量和精度。
-2. **KV Cache**：动态占用，随着序列长度和 Batch Size 线性增长。
-3. **中间激活 (Intermediate Activations)**：推理时的临时计算缓冲区。
+1. **模型權重 (Model Weights)**：靜態佔用，取決於模型參數量和精度。
+2. **KV Cache**：動態佔用，隨著序列長度和 Batch Size 線性增長。
+3. **中間激活 (Intermediate Activations)**：推理時的臨時計算緩衝區。
 
-![KV Cache 显存构成](img/fig-6.png)
+![KV Cache 顯存構成](img/fig-6.png)
 
-### 3.2 KV Cache 显存计算公式
+### 3.2 KV Cache 顯存計算公式
 
-KV Cache 的显存占用可以通过以下公式估算：
+KV Cache 的顯存佔用可以透過以下公式估算：
 
-![KV Cache 显存计算公式](img/fig-7.png)
+![KV Cache 顯存計算公式](img/fig-7.png)
 
 $$
 \text{Memory}_{KV} \approx 2 \times b_{kv} \times L \times B \times S \times H \times \frac{N_{kv}}{N_{attn}}
@@ -114,52 +114,52 @@ $$
 
 其中：
 
-- $2$：同时缓存 Key 和 Value 矩阵。
-- $b_{kv}$：数据精度（Bytes），如 FP16 为 2。
-- $L$：模型层数 (Layers)。
-- $B$：并发请求数 (Batch Size)。
-- $S$：每个请求的平均序列长度（Prompt + 已生成 Token）。
-- $H$：隐藏层维度 (Hidden Size)。
-- $N_{kv}$：KV Head 的数量（GQA/MQA 中的分组数）。
-- $N_{attn}$：Query Head 的数量（总注意力头数）。当使用 MHA 时 $N_{kv} = N_{attn}$，系数为 1。
+- $2$：同時快取 Key 和 Value 矩陣。
+- $b_{kv}$：資料精度（Bytes），如 FP16 為 2。
+- $L$：模型層數 (Layers)。
+- $B$：併發請求數 (Batch Size)。
+- $S$：每個請求的平均序列長度（Prompt + 已生成 Token）。
+- $H$：隱藏層維度 (Hidden Size)。
+- $N_{kv}$：KV Head 的數量（GQA/MQA 中的分組數）。
+- $N_{attn}$：Query Head 的數量（總注意力頭數）。當使用 MHA 時 $N_{kv} = N_{attn}$，係數為 1。
 
-### 3.3 Batch Size 对 KV Cache 的影响
+### 3.3 Batch Size 對 KV Cache 的影響
 
-上面 $B$ 这个参数经常被初学者忽略——"我先算好 per-token 的 KV Cache，乘以序列长度，就得到显存占用了"。这个算法在 batch=1 时是对的，但在真实推理服务中，**多个请求是并发处理的**，每个请求都需要自己独立的 KV Cache。
+上面 $B$ 這個參數經常被初學者忽略——"我先算好 per-token 的 KV Cache，乘以序列長度，就得到顯存佔用了"。這個演算法在 batch=1 時是對的，但在真實推理服務中，**多個請求是併發處理的**，每個請求都需要自己獨立的 KV Cache。
 
-**逐级展开公式：**
+**逐級展開公式：**
 
 $$
 \begin{aligned}
 \mathrm{per token} &= 2 \times b_{kv} \times L \times \frac{H \times N_{kv}}{N_{attn}} \\[4pt]
-\mathrm{per sequence} &= \mathrm{per token} \times S \quad \text{(序列长度)} \\[4pt]
-\text{total} &= \mathrm{per sequence} \times B \quad \text{(并发请求数)}
+\mathrm{per sequence} &= \mathrm{per token} \times S \quad \text{(序列長度)} \\[4pt]
+\text{total} &= \mathrm{per sequence} \times B \quad \text{(併發請求數)}
 \end{aligned}
 $$
 
-以 **Qwen2.5-7B**（L=28, H_kv=4, head_dim=128, FP16）为例：
+以 **Qwen2.5-7B**（L=28, H_kv=4, head_dim=128, FP16）為例：
 
 $$
 \mathrm{per token} = 2 \times 2 \times 28 \times 4 \times 128 = 57{,}344\ \text{bytes} \approx 56\ \text{KB}
 $$
 
-> 口径说明：本节容量数值统一按 GiB（1024 进制，即 bytes ÷ 2³⁰）计算；模型权重量级同理（Qwen2.5-7B BF16 权重约 14 GiB ≈ 15 GB）。
+> 口徑說明：本節容量數值統一按 GiB（1024 進位制，即 bytes ÷ 2³⁰）計算；模型權重量級同理（Qwen2.5-7B BF16 權重約 14 GiB ≈ 15 GB）。
 
-| batch | seq_len | total_tokens | KV Cache   | 与模型权重（约 14 GiB）对比 |
+| batch | seq_len | total_tokens | KV Cache   | 與模型權重（約 14 GiB）對比 |
 | :---: | :-----: | :----------: | :--------: | :-------------------------: |
 |   1   |  2,048  |    2,048     | ≈0.11 GiB  |            < 1%             |
 |   1   |  8,192  |    8,192     | ≈0.44 GiB  |             3%              |
 |   1   | 32,768  |    32,768    |  1.75 GiB  |            ≈13%             |
 |   8   |  2,048  |    16,384    | ≈0.88 GiB  |             6%              |
 |   8   |  8,192  |    65,536    |  3.5 GiB   |             25%             |
-|   8   | 32,768  |   262,144    |  14 GiB    |      **≈ 模型权重**         |
+|   8   | 32,768  |   262,144    |  14 GiB    |      **≈ 模型權重**         |
 |  32   |  2,048  |    65,536    |  3.5 GiB   |             25%             |
-|  32   |  8,192  |   262,144    |  14 GiB    |      **≈ 模型权重**         |
-|  32   | 32,768  |  1,048,576   | **56 GiB** |     **4× 模型权重**         |
+|  32   |  8,192  |   262,144    |  14 GiB    |      **≈ 模型權重**         |
+|  32   | 32,768  |  1,048,576   | **56 GiB** |     **4× 模型權重**         |
 
-**batch=32, seq_len=32768 时，KV Cache（56 GiB）约为模型权重（14 GiB）的 4 倍。** 这意味着即使 GPU 能装下模型，也可能因为并发请求的 KV Cache 撑爆显存。
+**batch=32, seq_len=32768 時，KV Cache（56 GiB）約為模型權重（14 GiB）的 4 倍。** 這意味著即使 GPU 能裝下模型，也可能因為併發請求的 KV Cache 撐爆顯存。
 
-再看 **Qwen2.5-72B**（L=80, H_kv=8, head_dim=128, FP16，模型权重 ~144 GB）：
+再看 **Qwen2.5-72B**（L=80, H_kv=8, head_dim=128, FP16，模型權重 ~144 GB）：
 
 $$
 \mathrm{per token} = 2 \times 2 \times 80 \times 8 \times 128 = 327{,}680\ \text{bytes} = 320\ \text{KB}
@@ -169,93 +169,93 @@ $$
 | :---: | :-----: | :--------------------------------------: |
 |   1   | 32,768  |                 10 GiB                   |
 |   4   | 32,768  |                 40 GiB                   |
-|   8   | 32,768  | **80 GiB** ← 一张 H100 仅 KV Cache 就满了 |
-|  16   | 32,768  |    **160 GiB** ← KV Cache 超过模型权重    |
+|   8   | 32,768  | **80 GiB** ← 一張 H100 僅 KV Cache 就滿了 |
+|  16   | 32,768  |    **160 GiB** ← KV Cache 超過模型權重    |
 
-**核心结论：**
+**核心結論：**
 
-1. **Batch Size 不是"免费"的**：b=1 时 KV Cache 占比很小，但 b=32 时长上下文场景 KV Cache 远超模型权重，成为显存的真正瓶颈。
-2. **长上下文 + 大 batch = KV Cache 爆炸**：两者是乘法关系（$S \times B$），任何一项增大都会等比例放大显存压力。
-3. **优化方向由此展开**：减少 per-token（量化、GQA/MLA）、减少并发 Cache（Offloading）、减少重复 Cache（Prefix Caching）——所有 KV Cache 优化策略都是为了在有限的 GPU 显存中容纳更多的 $S \times B$。
+1. **Batch Size 不是"免費"的**：b=1 時 KV Cache 占比很小，但 b=32 時長上下文場景 KV Cache 遠超模型權重，成為顯存的真正瓶頸。
+2. **長上下文 + 大 batch = KV Cache 爆炸**：兩者是乘法關係（$S \times B$），任何一項增大都會等比例放大顯存壓力。
+3. **最佳化方向由此展開**：減少 per-token（量化、GQA/MLA）、減少併發 Cache（Offloading）、減少重複 Cache（Prefix Caching）——所有 KV Cache 最佳化策略都是為了在有限的 GPU 顯存中容納更多的 $S \times B$。
 
-> **动手验证**：本文所有数值可由 [`kv_cache_calc.py`](01_kv_cache_calc.py) 复现。修改 `--seq-len` 和 `--batch` 参数，观察不同配置下的显存占用变化。
+> **動手驗證**：本文所有數值可由 [`kv_cache_calc.py`](01_kv_cache_calc.py) 復現。修改 `--seq-len` 和 `--batch` 參數，觀察不同配置下的顯存佔用變化。
 
 ---
 
-## 4. 优缺点对比与权衡
+## 4. 優缺點對比與權衡
 
-引入 KV Cache 从根本上改变了模型推理的性能特征。在实际应用中，系统架构师需要在计算速度的显著提升与显存资源的急剧消耗之间寻找最佳平衡点，不同的业务场景对这种权衡有着完全不同的偏好。
+引入 KV Cache 從根本上改變了模型推理的效能特徵。在實際應用中，系統架構師需要在計算速度的顯著提升與顯存資源的急劇消耗之間尋找最佳平衡點，不同的業務場景對這種權衡有著完全不同的偏好。
 
-### 4.1 速度与显存的 Trade-off
+### 4.1 速度與顯存的 Trade-off
 
-在评估是否引入缓存机制时，需要清晰地认识到计算效率与内存消耗之间的反向关系，以下表格直观展示了两者在不同维度的核心差异。
+在評估是否引入快取機制時，需要清晰地認識到計算效率與記憶體消耗之間的反向關係，以下表格直觀展示了兩者在不同維度的核心差異。
 
-| 特性           | 标准推理 (Standard Inference)     | KV Caching                      |
+| 特性           | 標準推理 (Standard Inference)     | KV Caching                      |
 | :------------- | :-------------------------------- | :------------------------------ |
-| **单步计算量** | 随序列长度平方级增长 ($O(N^2)$)   | 随序列长度线性增长 ($O(N)$)     |
-| **显存占用**   | 较低，主要取决于模型权重          | 较高，随序列长度线性增加        |
-| **推理速度**   | 随生成长度增加显著变慢 (计算瓶颈) | 速度快且相对稳定 (显存带宽瓶颈) |
-| **适用场景**   | 短文本、显存极其受限的场景        | 长文本生成、高吞吐服务          |
+| **單步計算量** | 隨序列長度平方級增長 ($O(N^2)$)   | 隨序列長度線性增長 ($O(N)$)     |
+| **顯存佔用**   | 較低，主要取決於模型權重          | 較高，隨序列長度線性增加        |
+| **推理速度**   | 隨生成長度增加顯著變慢 (計算瓶頸) | 速度快且相對穩定 (顯存頻寬瓶頸) |
+| **適用場景**   | 短文本、顯存極其受限的場景        | 長文字生成、高吞吐服務          |
 
-说明：上表中的“单步计算量”指标针对的是 Decode 阶段生成单个 Token 的场景。若估算生成 $L_{gen}$ 个 Token 的累计复杂度，无 KV Cache 近似为 $O(L_{gen}^3)$；有 KV Cache 时通常近似为 $O(P^2 + P \cdot L_{gen} + L_{gen}^2)$（其中 $P$ 为 Prompt 长度，$P^2$ 来自 Prefill）。
+說明：上表中的“單步計算量”指標針對的是 Decode 階段生成單個 Token 的場景。若估算生成 $L_{gen}$ 個 Token 的累計複雜度，無 KV Cache 近似為 $O(L_{gen}^3)$；有 KV Cache 時通常近似為 $O(P^2 + P \cdot L_{gen} + L_{gen}^2)$（其中 $P$ 為 Prompt 長度，$P^2$ 來自 Prefill）。
 
-### 4.2 为什么 KV Cache 是必须的？
+### 4.2 為什麼 KV Cache 是必須的？
 
-对于现代 LLM 应用（如 RAG、长文档摘要），上下文长度往往达到 32k 甚至 128k。如果不使用 KV Cache，生成延迟将变得难以接受。因此，KV Cache 已成为所有主流推理框架（如 vLLM, HuggingFace Transformers）的标准配置。
+對於現代 LLM 應用（如 RAG、長文件摘要），上下文長度往往達到 32k 甚至 128k。如果不使用 KV Cache，生成延遲將變得難以接受。因此，KV Cache 已成為所有主流推理框架（如 vLLM, HuggingFace Transformers）的標準配置。
 
 ---
 
-## 5. 进阶：降低 KV Cache 开销——从注意力机制入手
+## 5. 進階：降低 KV Cache 開銷——從注意力機制入手
 
-KV Cache 的显存占用与注意力头数成正比。标准 MHA 下每个 Q head 都有独立的 K/V head，KV Cache 需要存储全部 K/V。如果在注意力层面让多个 Q head 共享一组 K/V——在不改变模型总参数量的前提下减少需要缓存的 K/V 数量——KV Cache 就会成倍缩小。这就是 MQA 和 GQA 的核心思路：**它们首先是注意力机制的架构设计，KV Cache 减小是其对推理最直接的收益。**
+KV Cache 的顯存佔用與注意力頭數成正比。標準 MHA 下每個 Q head 都有獨立的 K/V head，KV Cache 需要儲存全部 K/V。如果在注意力層面讓多個 Q head 共享一組 K/V——在不改變模型總參數量的前提下減少需要快取的 K/V 數量——KV Cache 就會成倍縮小。這就是 MQA 和 GQA 的核心思路：**它們首先是注意力機制的架構設計，KV Cache 減小是其對推理最直接的收益。**
 
-![降低 KV Cache 开销](img/fig-9.png)
+![降低 KV Cache 開銷](img/fig-9.png)
 
 ### 5.1 Multi-Query Attention (MQA)
 
-MQA 让所有的 Attention Head 共享同一组 Key 和 Value 矩阵，从而将 KV Cache 的大小压缩到原来的 $1/N_{attn}$。这极大地降低了显存占用，但可能会轻微影响模型性能。
+MQA 讓所有的 Attention Head 共享同一組 Key 和 Value 矩陣，從而將 KV Cache 的大小壓縮到原來的 $1/N_{attn}$。這極大地降低了顯存佔用，但可能會輕微影響模型效能。
 
 ### 5.2 Grouped-Query Attention (GQA)
 
-GQA 是 MQA 和标准 MHA (Multi-Head Attention) 的折中方案。它将 Query Head 分组，每组共享一对 K/V Head。例如，Llama-2-70B 就使用了 GQA，显著提升了推理吞吐量，同时保持了较好的模型效果。
+GQA 是 MQA 和標準 MHA (Multi-Head Attention) 的折中方案。它將 Query Head 分組，每組共享一對 K/V Head。例如，Llama-2-70B 就使用了 GQA，顯著提升了推理吞吐量，同時保持了較好的模型效果。
 
 ![MHA vs GQA vs MQA Comparison](img/fig-10.png)
 
-不同注意力机制的 Head 对应关系如下：
+不同注意力機制的 Head 對應關係如下：
 
-- **MHA (左)**: 每个 Query Head 都有对应的 Key/Value Head。
-- **GQA (中)**: 多个 Query Head 共享一组 Key/Value Head (分组共享)。
-- **MQA (右)**: 所有 Query Head 共享同一组 Key/Value Head。
+- **MHA (左)**: 每個 Query Head 都有對應的 Key/Value Head。
+- **GQA (中)**: 多個 Query Head 共享一組 Key/Value Head (分組共享)。
+- **MQA (右)**: 所有 Query Head 共享同一組 Key/Value Head。
 
 ---
 
-## 6. 推荐阅读与工程实践
+## 6. 推薦閱讀與工程實踐
 
-将 KV Cache 技术真正落地到高并发的生产环境中，需要面对内存碎片化、首字延迟（TTFT）与吞吐量的综合博弈。业界已经发展出一系列成熟的系统级优化方案，帮助推理引擎在有限硬件下压榨出极限性能。
+將 KV Cache 技術真正落地到高併發的生產環境中，需要面對記憶體碎片化、首字延遲（TTFT）與吞吐量的綜合博弈。業界已經發展出一系列成熟的系統級最佳化方案，幫助推理引擎在有限硬體下壓榨出極限效能。
 
-### 6.1 工程实践要点
+### 6.1 工程實踐要點
 
-在真实推理服务中，KV Cache 的优化目标通常不是单一指标，而是综合平衡首字延迟、单 Token 延迟、吞吐与显存成本。以下是最常见的实践方向：
+在真實推理服務中，KV Cache 的最佳化目標通常不是單一指標，而是綜合平衡首字延遲、單 Token 延遲、吞吐與顯存成本。以下是最常見的實踐方向：
 
-1. **TTFT / TPOT 指标分拆优化**：
-   - TTFT (Time To First Token) 主要受 Prefill 影响，优化重点是批处理策略、算子融合与高效调度。
-   - TPOT (Time Per Output Token) 主要受 Decode 影响，优化重点是 KV 访存效率与带宽利用率。
+1. **TTFT / TPOT 指標分拆最佳化**：
+   - TTFT (Time To First Token) 主要受 Prefill 影響，最佳化重點是批處理策略、算子融合與高效排程。
+   - TPOT (Time Per Output Token) 主要受 Decode 影響，最佳化重點是 KV 訪存效率與頻寬利用率。
 
-2. **Paged KV Cache（分页缓存）**：
-   - 将连续大块 KV 内存切分为页，按需分配与回收，减少内存碎片。
-   - 支持更高并发与更灵活的请求调度，是高吞吐推理框架中的常见方案。
+2. **Paged KV Cache（分頁快取）**：
+   - 將連續大塊 KV 記憶體切分為頁，按需分配與回收，減少記憶體碎片。
+   - 支援更高併發與更靈活的請求排程，是高吞吐推理框架中的常見方案。
 
 3. **KV Cache 量化（如 FP8 / INT8）**：
-   - 通过降低 KV 精度显著减少显存占用与带宽压力。
-   - 需要在速度、显存收益与精度损失之间做任务级评估。
+   - 透過降低 KV 精度顯著減少顯存佔用與頻寬壓力。
+   - 需要在速度、顯存收益與精度損失之間做任務級評估。
 
-4. **淘汰与窗口策略（Eviction / Sliding Window）**：
-   - 对超长上下文可采用滑动窗口、分段摘要或优先级淘汰策略。
-   - 核心目标是在有限显存下维持可接受的生成质量与系统稳定性。
+4. **淘汰與視窗策略（Eviction / Sliding Window）**：
+   - 對超長上下文可採用滑動視窗、分段摘要或優先順序淘汰策略。
+   - 核心目標是在有限顯存下維持可接受的生成品質與系統穩定性。
 
-### 6.2 推荐阅读与资源
+### 6.2 推薦閱讀與資源
 
-- **姊妹篇**: [为什么 GPU 生成每个 token 时利用率不到 5%？——Prefill 与 Decode 深度拆解](../../../prefill_decode/prefill_decode_qkv_calculation.md)（[交互可视化](../../../prefill_decode/prefill_decode_visual.html) · [校验脚本](../../../prefill_decode/prefill_decode_validate.py)） — 从矩阵形状和计算量层面推导 KV Cache 的数学必然性，以及 compute-bound vs memory-bound 的根因分析。
-- **文章**: [KV Caching Explained (Hugging Face)](https://huggingface.co/blog/not-lain/kv-caching) - 本文的主要参考来源。
-- **可视化**: [KV Caching in LLMs, explained visually](https://www.dailydoseofds.com/p/kv-caching-in-llms-explained-visually/) - 包含生动的动画演示。
-- **论文**: [GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints](https://arxiv.org/abs/2305.13245) - GQA 的原始论文。
+- **姊妹篇**: [為什麼 GPU 生成每個 token 時利用率不到 5%？——Prefill 與 Decode 深度拆解](../../../prefill_decode/prefill_decode_qkv_calculation.md)（[互動視覺化](../../../prefill_decode/prefill_decode_visual.html) · [校驗指令碼](../../../prefill_decode/prefill_decode_validate.py)） — 從矩陣形狀和計算量層面推導 KV Cache 的數學必然性，以及 compute-bound vs memory-bound 的根因分析。
+- **文章**: [KV Caching Explained (Hugging Face)](https://huggingface.co/blog/not-lain/kv-caching) - 本文的主要參考來源。
+- **視覺化**: [KV Caching in LLMs, explained visually](https://www.dailydoseofds.com/p/kv-caching-in-llms-explained-visually/) - 包含生動的動畫演示。
+- **論文**: [GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints](https://arxiv.org/abs/2305.13245) - GQA 的原始論文。

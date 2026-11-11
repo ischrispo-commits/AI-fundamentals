@@ -1,16 +1,16 @@
-# NCCL 通信路径逐层压测——从 NVLink 到 PCIe Fallback
+# NCCL 通訊路徑逐層壓測——從 NVLink 到 PCIe Fallback
 
-多 GPU 通信的性能天花板由物理拓扑决定：NVLink、PCIe P2P、IB、TCP 依次递减。但理论带宽是一回事，实际能跑到多少、禁用某条路径后衰减多少、不同 GPU pair 之间有没有差异，只有压测才能回答。
+多 GPU 通訊的效能天花板由物理拓撲決定：NVLink、PCIe P2P、IB、TCP 依次遞減。但理論頻寬是一回事，實際能跑到多少、禁用某條路徑後衰減多少、不同 GPU pair 之間有沒有差異，只有壓測才能回答。
 
-本文在一台 8×H100 服务器上用 NCCL all_reduce 逐层验证：NVLink（同 NUMA / 跨 NUMA）→ PCIe P2P 降级 → 禁用 P2P fallback。每层固定张量从 1MB 到 512MB，记录 bus bandwidth。最后给出一张速查表：从最快到最慢的完整通信层级，带实测值和理论对照。
+本文在一台 8×H100 伺服器上用 NCCL all_reduce 逐層驗證：NVLink（同 NUMA / 跨 NUMA）→ PCIe P2P 降級 → 禁用 P2P fallback。每層固定張量從 1MB 到 512MB，記錄 bus bandwidth。最後給出一張速查表：從最快到最慢的完整通訊層級，帶實測值和理論對照。
 
-> as-of 2026-11-05：实测环境 8×NVIDIA H100 80GB HBM3 + CUDA 12.8 + 容器镜像 lmsysorg/sglang:v0.5.13.post1（NCCL 版本随镜像），宿主驱动版本文中未记录；带宽数字随 NCCL/驱动版本与机型变化，引用前复核。
+> as-of 2026-11-05：實測環境 8×NVIDIA H100 80GB HBM3 + CUDA 12.8 + 容器映象 lmsysorg/sglang:v0.5.13.post1（NCCL 版本隨映象），宿主驅動版本文中未記錄；頻寬數字隨 NCCL/驅動版本與機型變化，引用前複核。
 
 ---
 
-## 一、拓扑摸底
+## 一、拓撲摸底
 
-`nvidia-smi topo -m` 输出决定了后续所有测试的分组依据。这台 H100 的关键信息：
+`nvidia-smi topo -m` 輸出決定了後續所有測試的分組依據。這台 H100 的關鍵資訊：
 
 ```text
         GPU0    GPU1    GPU2    GPU3    GPU4    GPU5    GPU6    GPU7
@@ -24,7 +24,7 @@ GPU6    NV18    NV18    NV18    NV18    NV18    NV18     X      NV18
 GPU7    NV18    NV18    NV18    NV18    NV18    NV18    NV18     X
 ```
 
-所有 8 张 GPU 两两之间都标 `NV18`，即 18 条 NVLink 4.0 link 直连。这意味着全部 GPU 在同一个 NVSwitch 域内，任意 pair 都有完整的 450 GB/s 单向带宽。
+所有 8 張 GPU 兩兩之間都標 `NV18`，即 18 條 NVLink 4.0 link 直連。這意味著全部 GPU 在同一個 NVSwitch 域內，任意 pair 都有完整的 450 GB/s 單向頻寬。
 
 NUMA 分布：
 
@@ -33,35 +33,35 @@ NUMA 分布：
 | 0         | GPU 0,1,2,3 | NIC 0,1,2,3 (PIX) |
 | 1         | GPU 4,5,6,7 | NIC 4,5,6,7 (PIX) |
 
-GPU 和 NIC 之间存在亲和性：GPU0 与 NIC0 走 PIX（同一 PCIe switch），与 NIC6 走 SYS（跨 NUMA + PCIe + SMP）。GPUDirect RDMA 选哪块 NIC，这条亲和性是决定性信息。
+GPU 和 NIC 之間存在親和性：GPU0 與 NIC0 走 PIX（同一 PCIe switch），與 NIC6 走 SYS（跨 NUMA + PCIe + SMP）。GPUDirect RDMA 選哪塊 NIC，這條親和性是決定性資訊。
 
 ---
 
-## 二、测试方法
+## 二、測試方法
 
-**环境**：
+**環境**：
 
-| 项目   | 值                                                                                           |
+| 專案   | 值                                                                                           |
 | ------ | -------------------------------------------------------------------------------------------- |
 | GPU    | 8× NVIDIA H100 80GB HBM3                                                                     |
-| NVLink | 18× NVLink 4.0 × 25 GB/s = 450 GB/s 单向                                                     |
+| NVLink | 18× NVLink 4.0 × 25 GB/s = 450 GB/s 單向                                                     |
 | CUDA   | 12.8                                                                                         |
 | 容器   | PyTorch + NCCL (lmsysorg/sglang:v0.5.13.post1)                                               |
 | 算法   | NCCL Ring (NCCL_ALGO=Ring)                                                                   |
-| 张量   | float32, 1MB ~ 512MB，预热 5 次，计时 30 次取平均                                            |
-| 指标   | bus bandwidth = `data_size × 2 × (n-1)/n / time`（NCCL 标准公式，2 GPU 时 bus_bw = algo_bw） |
+| 張量   | float32, 1MB ~ 512MB，預熱 5 次，計時 30 次取平均                                            |
+| 指標   | bus bandwidth = `data_size × 2 × (n-1)/n / time`（NCCL 標準公式，2 GPU 時 bus_bw = algo_bw） |
 
-**测试矩阵**：
+**測試矩陣**：
 
 | #   | 配置                           | 目的                             |
 | --- | ------------------------------ | -------------------------------- |
-| ①   | GPU0↔GPU1 (同 NUMA)            | NVLink 基线                      |
-| ②   | GPU4↔GPU5 (同 NUMA)            | NVLink 另一 NUMA 对照            |
-| ③   | GPU0↔GPU4 (跨 NUMA)            | 验证 NVSwitch 是否屏蔽 NUMA 差异 |
-| ④   | GPU0↔GPU7 (最大 NUMA 距离)     | 跨 NUMA 最差情况                 |
-| ⑤   | GPU0↔GPU1 + NCCL_P2P_DISABLE=1 | P2P 禁用后的降级带宽             |
+| ①   | GPU0↔GPU1 (同 NUMA)            | NVLink 基線                      |
+| ②   | GPU4↔GPU5 (同 NUMA)            | NVLink 另一 NUMA 對照            |
+| ③   | GPU0↔GPU4 (跨 NUMA)            | 驗證 NVSwitch 是否屏蔽 NUMA 差異 |
+| ④   | GPU0↔GPU7 (最大 NUMA 距離)     | 跨 NUMA 最差情況                 |
+| ⑤   | GPU0↔GPU1 + NCCL_P2P_DISABLE=1 | P2P 禁用後的降級頻寬             |
 
-测试脚本（torchrun 启动 2 进程）：
+測試指令碼（torchrun 啟動 2 行程）：
 
 ```python
 import os, time
@@ -99,11 +99,11 @@ if __name__ == "__main__":
 
 ---
 
-## 三、实测结果
+## 三、實測結果
 
-### 3.1 NVLink 同 NUMA（基线）
+### 3.1 NVLink 同 NUMA（基線）
 
-| 张量   | GPU0↔GPU1 (NUMA 0) | GPU4↔GPU5 (NUMA 1) |
+| 張量   | GPU0↔GPU1 (NUMA 0) | GPU4↔GPU5 (NUMA 1) |
 | ------ | ------------------ | ------------------ |
 | 1 MB   | 22.7 GB/s          | 27.3 GB/s          |
 | 8 MB   | 172.5 GB/s         | 172.1 GB/s         |
@@ -111,11 +111,11 @@ if __name__ == "__main__":
 | 256 MB | 298.8 GB/s         | 296.3 GB/s         |
 | 512 MB | **315.8 GB/s**     | **313.5 GB/s**     |
 
-两组基线高度一致，NUMA 0 和 NUMA 1 的 NVLink 带宽无差异。
+兩組基線高度一致，NUMA 0 和 NUMA 1 的 NVLink 頻寬無差異。
 
 ### 3.2 NVLink 跨 NUMA
 
-| 张量   | GPU0↔GPU4 (跨 NUMA) | GPU0↔GPU7 (最大距离) |
+| 張量   | GPU0↔GPU4 (跨 NUMA) | GPU0↔GPU7 (最大距離) |
 | ------ | ------------------- | -------------------- |
 | 1 MB   | 29.8 GB/s           | 31.4 GB/s            |
 | 8 MB   | 124.7 GB/s          | 170.5 GB/s           |
@@ -123,11 +123,11 @@ if __name__ == "__main__":
 | 256 MB | 294.1 GB/s          | 278.8 GB/s           |
 | 512 MB | **316.3 GB/s**      | **315.2 GB/s**       |
 
-跨 NUMA 与同 NUMA 的 NVLink 带宽**完全一致**。GPU0↔GPU4 在 8MB 时有波动（124.7 vs 170+），这是单次测量噪声，512MB 时全部回归 ~315 GB/s。结论：NVSwitch 屏蔽了 NUMA 差异，任意 GPU pair 的 NVLink 带宽相同。
+跨 NUMA 與同 NUMA 的 NVLink 頻寬**完全一致**。GPU0↔GPU4 在 8MB 時有波動（124.7 vs 170+），這是單次測量噪聲，512MB 時全部迴歸 ~315 GB/s。結論：NVSwitch 屏蔽了 NUMA 差異，任意 GPU pair 的 NVLink 頻寬相同。
 
 ### 3.3 P2P 禁用（PCIe Fallback）
 
-| 张量   | Bus BW    |
+| 張量   | Bus BW    |
 | ------ | --------- |
 | 1 MB   | 15.6 GB/s |
 | 8 MB   | 23.0 GB/s |
@@ -135,40 +135,40 @@ if __name__ == "__main__":
 | 256 MB | 23.7 GB/s |
 | 512 MB | 23.8 GB/s |
 
-P2P 禁用后，NCCL 不再使用 NVLink 直接传输。数据走 GPU0 → CPU Memory → GPU1 路径，受限于 PCIe Gen5 x16 的双向带宽（两次跨 PCIe 桥传输 + 内存拷贝开销）。有效带宽 23.8 GB/s，仅 NVLink 的 **1/13**。
+P2P 禁用后，NCCL 不再使用 NVLink 直接傳輸。資料走 GPU0 → CPU Memory → GPU1 路徑，受限於 PCIe Gen5 x16 的雙向頻寬（兩次跨 PCIe 橋傳輸 + 記憶體複製開銷）。有效頻寬 23.8 GB/s，僅 NVLink 的 **1/13**。
 
 ---
 
-## 四、结果速查
+## 四、結果速查
 
-| 通信路径                     | 512MB Bus BW | 理论峰值  | 效率 | 说明                        |
+| 通訊路徑                     | 512MB Bus BW | 理論峰值  | 效率 | 說明                        |
 | ---------------------------- | ------------ | --------- | ---- | --------------------------- |
 | NVLink (NVSwitch 同域)       | ~316 GB/s    | 450 GB/s  | 70%  | 任意 GPU pair               |
-| P2P Disabled (PCIe Fallback) | ~24 GB/s     | 32 GB/s\* | 75%  | GPU→CPU→GPU，两跳 PCIe Gen5 |
+| P2P Disabled (PCIe Fallback) | ~24 GB/s     | 32 GB/s\* | 75%  | GPU→CPU→GPU，兩跳 PCIe Gen5 |
 
-> \* P2P 禁用后数据路径为 GPU0→CPU Memory→GPU1，需要两次 PCIe Gen5 x16 传输（各 64 GB/s 单向），理论有效带宽上限约 32 GB/s。实测 24 GB/s = 理论 32 GB/s 的 75%，差额来自内存拷贝和容器开销。
+> \* P2P 禁用後資料路徑為 GPU0→CPU Memory→GPU1，需要兩次 PCIe Gen5 x16 傳輸（各 64 GB/s 單向），理論有效頻寬上限約 32 GB/s。實測 24 GB/s = 理論 32 GB/s 的 75%，差額來自記憶體複製和容器開銷。
 
-带宽-张量大小曲线：
+頻寬-張量大小曲線：
 
-![NVLink vs P2P Disabled 带宽-张量大小曲线](assets/nccl_path_benchmark.svg)
+![NVLink vs P2P Disabled 頻寬-張量大小曲線](assets/nccl_path_benchmark.svg)
 
-NVLink 在 8MB 时已达 170 GB/s（54% 峰值），256MB 时达 295 GB/s（93% 峰值），512MB 时收敛至 316 GB/s。P2P 禁用后 8MB 即触顶 23 GB/s，小消息的带宽天花板同样受 PCIe 限制。
-
----
-
-## 五、结论
-
-1. **NVSwitch 屏蔽 NUMA 差异**：跨 NUMA（GPU0↔GPU4/GPU7）与同 NUMA（GPU0↔GPU1）的 NVLink 带宽完全相同，无需对 TP 分组做 NUMA 感知调度。
-
-2. **NVLink → PCIe 降级损失 13 倍**：P2P 禁用后带宽从 ~316 GB/s 骤降至 ~24 GB/s。确保 `NCCL_P2P_DISABLE` 在生产环境中不被错误设置。
-
-3. **建议：NIC 选型关注 PIX 亲和性**（拓扑分析，未经本文实测）：GPU0 与 NIC0/1 走 PIX（同一 PCIe switch），与 NIC4-7 走 SYS（跨 NUMA + PCIe + SMP）。GPUDirect RDMA 场景下优先将跨节点通信绑定到 PIX 路径的 NIC，理论上可避免跨 NUMA 的额外 PCIe 跳数。实际收益取决于 NCCL 的 multi-NIC 调度策略，需在 IB/RoCE 环境下单独验证。
+NVLink 在 8MB 時已達 170 GB/s（54% 峰值），256MB 時達 295 GB/s（93% 峰值），512MB 時收斂至 316 GB/s。P2P 禁用后 8MB 即觸頂 23 GB/s，小訊息的頻寬天花板同樣受 PCIe 限制。
 
 ---
 
-## 六、相关资源
+## 五、結論
 
-- [NCCL 技术理论深度解析](01_nccl_theory.md) — AllReduce 算法、Ring/Tree 拓扑选择、RDMA 机制。
-- [NCCL 基准测试方法论](04_nccl_benchmark.md) — `all_reduce_perf` 编译、运行，A100 实测。
-- [GPU 拓扑检测工具](gpu_topology_detector.sh) — 自动化 GPU 拓扑分析与通信路径规划。
-- [GPUDirect RDMA 跨节点验证](../../01_hardware_architecture/gpudirect/04_gpudirect_rdma_verification.md) — 跨节点 IB HDR 的端到端验证。
+1. **NVSwitch 屏蔽 NUMA 差異**：跨 NUMA（GPU0↔GPU4/GPU7）與同 NUMA（GPU0↔GPU1）的 NVLink 頻寬完全相同，無需對 TP 分組做 NUMA 感知排程。
+
+2. **NVLink → PCIe 降級損失 13 倍**：P2P 禁用後頻寬從 ~316 GB/s 驟降至 ~24 GB/s。確保 `NCCL_P2P_DISABLE` 在生產環境中不被錯誤設定。
+
+3. **建議：NIC 選型關注 PIX 親和性**（拓撲分析，未經本文實測）：GPU0 與 NIC0/1 走 PIX（同一 PCIe switch），與 NIC4-7 走 SYS（跨 NUMA + PCIe + SMP）。GPUDirect RDMA 場景下優先將跨節點通訊繫結到 PIX 路徑的 NIC，理論上可避免跨 NUMA 的額外 PCIe 跳數。實際收益取決於 NCCL 的 multi-NIC 排程策略，需在 IB/RoCE 環境下單獨驗證。
+
+---
+
+## 六、相關資源
+
+- [NCCL 技術理論深度解析](01_nccl_theory.md) — AllReduce 算法、Ring/Tree 拓撲選擇、RDMA 機制。
+- [NCCL 基準測試方法論](04_nccl_benchmark.md) — `all_reduce_perf` 編譯、執行，A100 實測。
+- [GPU 拓撲檢測工具](gpu_topology_detector.sh) — 自動化 GPU 拓撲分析與通訊路徑規劃。
+- [GPUDirect RDMA 跨節點驗證](../../01_hardware_architecture/gpudirect/04_gpudirect_rdma_verification.md) — 跨節點 IB HDR 的端到端驗證。

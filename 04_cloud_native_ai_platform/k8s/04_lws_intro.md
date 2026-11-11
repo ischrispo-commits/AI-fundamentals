@@ -1,89 +1,89 @@
-# vLLM + LWS：Kubernetes 上的多机多卡推理方案
+# vLLM + LWS：Kubernetes 上的多機多卡推理方案
 
-随着 `LLM` 推理的工程实践不断深入，现有推理框架在部署能力方面的不足日益显现：例如难以跨节点统一管理多个 `Pod` 的生命周期、资源调度粒度过粗、缺乏分布式拓扑感知等问题。针对这些挑战，`Kubernetes` 推出了一种新的控制器原语 —— `LeaderWorkerSet`（简称 **LWS**），用于支持“分布式启动”“资源组调度”“拓扑感知”“组级原子恢复”等推理服务中的关键能力，成为包括 `vLLM`、`TensorRT-LLM` 在内的新一代大模型推理系统的重要运行支撑。
+隨著 `LLM` 推理的工程實踐不斷深入，現有推理框架在部署能力方面的不足日益顯現：例如難以跨節點統一管理多個 `Pod` 的生命周期、資源排程粒度過粗、缺乏分散式拓撲感知等問題。針對這些挑戰，`Kubernetes` 推出了一種新的控制器原語 —— `LeaderWorkerSet`（簡稱 **LWS**），用於支援“分散式啟動”“資源組排程”“拓撲感知”“組級原子恢復”等推理服務中的關鍵能力，成為包括 `vLLM`、`TensorRT-LLM` 在內的新一代大模型推理系統的重要執行支撐。
 
-## 什么是 LWS？
+## 什麼是 LWS？
 
-`LeaderWorkerSet`（LWS）是 `Kubernetes` 新引入的一个 `CRD`（`CustomResourceDefinition`，自定义资源类型），其设计目标是 **支持分布式 AI 作业的原生部署与管理**，在部署结构上强调以下特点：
+`LeaderWorkerSet`（LWS）是 `Kubernetes` 新引入的一個 `CRD`（`CustomResourceDefinition`，自定義資源類型），其設計目標是 **支持分布式 AI 作業的原生部署與管理**，在部署結構上強調以下特點：
 
-- **分布式角色结构**：`LWS` 将一组逻辑相关的 `Pod` 分为一个 `Leader Pod` 和多个 `Worker Pod`。`Leader` 负责初始化任务、构建主控制流，`Worker` 负责协同工作。
-- **统一生命周期管理**：`LWS` 保证一组 `Pod` 的创建、销毁、状态检查以”组”为单位统一管理，解决了 `Deployment`、`StatefulSet` 等原生控制器在处理多角色任务时的能力不足。
-- **拓扑感知能力**：通过对 `Node` 拓扑结构的感知（如 `GPU`、`NUMA`、`TPU` 拓扑等），`LWS` 能为推理场景中的”低延迟、强绑定”资源调度提供基础。
-- **状态同步能力**：`Leader` 可通过注解等机制将服务发现、端口号、共享参数等元信息同步给 `Worker`，降低集群服务编排的复杂性。
+- **分散式角色結構**：`LWS` 將一組邏輯相關的 `Pod` 分為一個 `Leader Pod` 和多個 `Worker Pod`。`Leader` 負責初始化任務、構建主控制流，`Worker` 負責協同工作。
+- **統一生命週期管理**：`LWS` 保證一組 `Pod` 的建立、銷燬、狀態檢查以”組”為單位統一管理，解決了 `Deployment`、`StatefulSet` 等原生控制器在處理多角色任務時的能力不足。
+- **拓撲感知能力**：透過對 `Node` 拓撲結構的感知（如 `GPU`、`NUMA`、`TPU` 拓撲等），`LWS` 能為推理場景中的”低延遲、強繫結”資源排程提供基礎。
+- **狀態同步能力**：`Leader` 可透過註解等機制將服務發現、埠號、共享參數等元資訊同步給 `Worker`，降低叢集服務編排的複雜性。
 
-简言之，`LWS` 旨在提供一种 **更符合 AI 原生工作负载特点的分布式控制器语义**，填补现有原语在推理部署上的能力空白。
+簡言之，`LWS` 旨在提供一種 **更符合 AI 原生工作負載特點的分散式控制器語義**，填補現有原語在推理部署上的能力空白。
 
 ![Conceptual View](https://lws.sigs.k8s.io/images/concept.png)
 
-### 与传统控制器的对比
+### 與傳統控制器的對比
 
-`Kubernetes` 中已有多种控制器原语，如 `Deployment`、`StatefulSet`、`Job`、`ReplicaSet` 等，它们在构建无状态服务或状态服务方面表现出色。然而，对于如 `vLLM`、`TensorRT-LLM` 这类 **异构资源强绑定 + 启动顺序依赖 + 多节点资源协同** 的工作负载，传统原语存在如下不足：
+`Kubernetes` 中已有多種控制器原語，如 `Deployment`、`StatefulSet`、`Job`、`ReplicaSet` 等，它們在構建無狀態服務或狀態服務方面表現出色。然而，對於如 `vLLM`、`TensorRT-LLM` 這類 **異構資源強繫結 + 啟動順序依賴 + 多節點資源協同** 的工作負載，傳統原語存在如下不足：
 
-| **控制器**                  | **适用场景**                | **不足**                           |
+| **控制器**                  | **適用場景**                | **不足**                           |
 | --------------------------- | --------------------------- | ---------------------------------- |
-| `Deployment` / `ReplicaSet` | 无状态服务（如 Web 服务）   | 缺乏角色区分、拓扑感知             |
-| `StatefulSet`               | 状态服务（如数据库）        | 调度粒度为单 Pod，跨节点通信能力弱 |
-| `Job` / `CronJob`           | 离线批处理任务              | 不支持长周期常驻服务               |
-| `DaemonSet`                 | Node 级服务（如日志收集器） | 无法动态扩展，资源调度不可控       |
+| `Deployment` / `ReplicaSet` | 無狀態服務（如 Web 服務）   | 缺乏角色區分、拓撲感知             |
+| `StatefulSet`               | 狀態服務（如資料庫）        | 排程粒度為單 Pod，跨節點通訊能力弱 |
+| `Job` / `CronJob`           | 離線批處理任務              | 不支援長週期常駐服務               |
+| `DaemonSet`                 | Node 級服務（如日志收集器） | 無法動態擴展，資源排程不可控       |
 
-相比之下，**LeaderWorkerSet 是首个支持 Pod 间主从角色语义的控制器**，具有以下差异化能力：
+相比之下，**LeaderWorkerSet 是首個支援 Pod 間主從角色語義的控制器**，具有以下差異化能力：
 
-1. **生命周期一致性**：`Leader` 与 `Worker` 被绑定为一个逻辑部署单元，状态同步、重建过程均由控制器原子管理。
-2. **拓扑表达能力**：`Worker` 可感知 `Leader` 所在节点信息，实现“**同 NUMA**”、“**同 switch**”等低延迟协同。
-3. **分布式配置能力**：通过注解或 `Downward API` 等方式传递 `Leader` 地址、端口、分布式参数，简化调度逻辑。
+1. **生命周期一致性**：`Leader` 與 `Worker` 被繫結為一個邏輯部署單元，狀態同步、重建過程均由控制器原子管理。
+2. **拓撲表達能力**：`Worker` 可感知 `Leader` 所在節點資訊，實現“**同 NUMA**”、“**同 switch**”等低延遲協同。
+3. **分布式配置能力**：透過註解或 `Downward API` 等方式傳遞 `Leader` 地址、端口、分散式參數，簡化排程邏輯。
 
-## LWS 的核心优势
+## LWS 的核心優勢
 
-### 1. 统一的生命周期管理
+### 1. 統一的生命週期管理
 
-`LWS` 将 `Super Pod` 作为原子单元进行扩缩容和更新，确保组内状态一致性。例如：
+`LWS` 將 `Super Pod` 作為原子單元進行擴縮容和更新，確保組內狀態一致性。例如：
 
-- 扩缩容时以组为单位增减资源池。
-- 滚动更新以组为单位逐组替换，`maxUnavailable`/`maxSurge` 控制节奏，一个组只有 Leader 和全部 Worker 都 Ready 才算就绪。
-- 故障时优先局部恢复，必要时整组重建（`restartPolicy: RecreateGroupOnPodRestart`，组内任一 Pod 重启即整组重建）。
+- 擴縮容時以組為單位增減資源池。
+- 滾動更新以組為單位逐組替換，`maxUnavailable`/`maxSurge` 控制節奏，一個組只有 Leader 和全部 Worker 都 Ready 才算就緒。
+- 故障時優先區域性恢復，必要時整組重建（`restartPolicy: RecreateGroupOnPodRestart`，組內任一 Pod 重啟即整組重建）。
 
-### 2. 拓扑感知的调度
+### 2. 拓撲感知的排程
 
-`LWS` 自身依赖 `Kubernetes` 原生的 `Pod Topology Spread Constraints`，配合厂商各自的拓扑注解使用（`LWS` 没有内置厂商拓扑注解，不同环境用各自的扩展）：
+`LWS` 自身依賴 `Kubernetes` 原生的 `Pod Topology Spread Constraints`，配合廠商各自的拓撲註解使用（`LWS` 沒有內建廠商拓撲註解，不同環境用各自的擴展）：
 
 ```yaml
-# Google TPU 集群（GKE 注解）
+# Google TPU 叢集（GKE 注解）
 annotations:
   cloud.google.com/gke-tpu-topology: "4x4x4"
 ```
 
-支持 `NVLink` 域内调度、`TPU` 切片绑定等高级场景，降低跨节点通信延迟。
+支持 `NVLink` 域內排程、`TPU` 切片繫結等高階場景，降低跨節點通訊延遲。
 
-### 3. 弹性伸缩与资源优化
+### 3. 彈性伸縮與資源最佳化
 
-与 `HPA` 深度集成，支持基于多维指标（请求队列、`GPU` 利用率）的弹性伸缩。资源分配通过 `limits`/`requests` 精细化控制，结合 `NVIDIA MIG` 技术可将单 `GPU` 划分为多个实例，提升利用率。
+與 `HPA` 深度集成，支援基於多維指標（請求佇列、`GPU` 利用率）的彈性伸縮。資源分配透過 `limits`/`requests` 精細化控制，結合 `NVIDIA MIG` 技術可將單 `GPU` 劃分為多個實例，提升利用率。
 
-### 4. 安全与可观测性
+### 4. 安全與可觀測性
 
-- **凭证管理**：通过 `Secrets` 存储敏感信息，避免明文暴露。
-- **网络隔离**：使用 `NetworkPolicy` 限制 `Worker` 仅允许与 `Leader` 通信。
-- **监控体系**：采集 `GPU` 利用率、`KV Cache` 使用率等关键指标。
+- **憑證管理**：透過 `Secrets` 儲存敏感資訊，避免明文暴露。
+- **網路隔離**：使用 `NetworkPolicy` 限制 `Worker` 僅允許與 `Leader` 通信。
+- **監控體系**：采集 `GPU` 利用率、`KV Cache` 使用率等關鍵指標。
 
-## vLLM 场景下的能力支撑分析
+## vLLM 場景下的能力支撐分析
 
-`vLLM` 是一个专为大语言模型推理优化的高性能引擎，在实际部署中，它往往要求：
+`vLLM` 是一個專為大語言模型推理最佳化的高效能引擎，在實際部署中，它往往要求：
 
-- 横跨多个节点使用 GPU/TPU；
-- `Worker` 需通过 `gRPC` 接入 `Leader` 完成分布式 `KV Cache` 管理；
-- 推理参数（如 `max num tokens`）需由 `Leader` 向 `Worker` 广播；
-- 启动与恢复需具备原子性，避免部分 `Worker` 卡死或重连失败。
+- 橫跨多個節點使用 GPU/TPU；
+- `Worker` 需透過 `gRPC` 接入 `Leader` 完成分布式 `KV Cache` 管理；
+- 推理參數（如 `max num tokens`）需由 `Leader` 向 `Worker` 廣播；
+- 啟動與恢復需具備原子性，避免部分 `Worker` 卡死或重連失敗。
 
-这些需求中，`LWS` 提供的组级调度与启动顺序控制能力、拓扑感知能力、配置动态传递能力，恰好能够完整覆盖，如下表所示：
+這些需求中，`LWS` 提供的組級排程與啟動順序控制能力、拓撲感知能力、配置動態傳遞能力，恰好能夠完整覆蓋，如下表所示：
 
 | **能力需求** | **LWS 提供方式**                                 |
 | ------------ | ------------------------------------------------ |
-| 角色区分     | Leader / Worker 模板                             |
-| 启动顺序     | Leader 先启动，地址写入注解，Worker 自动感知     |
-| 参数广播     | Leader 将 tokens、端口等写入 CRD，被 Worker 读取 |
-| 拓扑调度     | Worker 可设定和 Leader 相同的 NUMA 区域          |
-| 异常恢复     | 控制器统一重启整个组，保证状态一致性             |
+| 角色區分     | Leader / Worker 模板                             |
+| 啟動順序     | Leader 先啟動，地址寫入註解，Worker 自動感知     |
+| 參數廣播     | Leader 將 tokens、埠等寫入 CRD，被 Worker 讀取 |
+| 拓撲排程     | Worker 可設定和 Leader 相同的 NUMA 區域          |
+| 異常恢復     | 控制器統一重啟整個組，保證狀態一致性             |
 
-## vLLM 与 LWS 的实战部署
+## vLLM 與 LWS 的實戰部署
 
 ### 配置解析
 
@@ -183,20 +183,20 @@ spec:
   type: ClusterIP
 ```
 
-> 详细配置说明请参见 [vLLM 官方文档](https://docs.vllm.ai/en/latest/deployment/frameworks/lws.html)。
+> 詳細配置說明請參見 [vLLM 官方文件](https://docs.vllm.ai/en/latest/deployment/frameworks/lws.html)。
 
-**关键配置说明**：
+**關鍵配置說明**：
 
-- **动态组规模传递**：通过注解机制，`$(LWS_GROUP_SIZE)` 动态注入组内 Pod 数量，确保资源分配的灵活性。
-- **服务发现机制**：`Worker` Pod 通过注解 `leaderworkerset.x-k8s.io/leader-address` 自动获取 `Leader` 的地址，实现高效的服务发现。
+- **動態組規模傳遞**：透過註解機制，`$(LWS_GROUP_SIZE)` 動態注入組內 Pod 數量，確保資源分配的靈活性。
+- **服務發現機制**：`Worker` Pod 透過註解 `leaderworkerset.x-k8s.io/leader-address` 自動獲取 `Leader` 的地址，實現高效的服務發現。
 
-## 性能调优与部署实践
+## 效能調優與部署實踐
 
-`vLLM` 对推理性能高度敏感，部署时通常采用多机多卡结构（GPU/TPU），以实现模型并行和吞吐优化。以下是某企业在生产环境中的部署经验总结：
+`vLLM` 對推理效能高度敏感，部署時通常採用多機多卡結構（GPU/TPU），以實現模型並行和吞吐最佳化。以下是某企業在生產環境中的部署經驗總結：
 
-- **模型规模**：使用 `Mixtral 8x7B`（约 46.7B 参数），AWQ 量化后模型大小约 `26GB`。
-- **部署结构**：1 个 `Leader` + 3 个 `Worker`，每个 `Worker` 节点分配 2 块 `GPU`，采用张量并行机制。
-- **核心参数调优示例**：
+- **模型規模**：使用 `Mixtral 8x7B`（約 46.7B 參數），AWQ 量化後模型大小約 `26GB`。
+- **部署結構**：1 個 `Leader` + 3 個 `Worker`，每個 `Worker` 節點分配 2 塊 `GPU`，採用張量並行機制。
+- **核心參數調優示例**：
 
   ```bash
   python3 -m vllm.entrypoints.openai.api_server \
@@ -212,27 +212,27 @@ spec:
     --disable-log-stats
   ```
 
-- **调优要点说明**：
-  - `--tensor-parallel-size`：结合多卡部署设定张量并行维度。
-  - `--gpu-memory-utilization`：控制每张 `GPU` 的显存使用上限，避免 `OOM`。
-  - `--quantization`：使用 `awq` 量化以减小模型加载体积。
-  - `--max-num-batched-tokens` 与 `--max-num-seqs`：控制批处理规模，提升吞吐性能。
-  - `--enforce-eager`：跳过 CUDA Graph 构建，降低启动延迟（以部分吞吐为代价）。
+- **調優要點說明**：
+  - `--tensor-parallel-size`：結合多卡部署設定張量並行維度。
+  - `--gpu-memory-utilization`：控制每張 `GPU` 的顯存使用上限，避免 `OOM`。
+  - `--quantization`：使用 `awq` 量化以減小模型載入體積。
+  - `--max-num-batched-tokens` 與 `--max-num-seqs`：控制批處理規模，提升吞吐性能。
+  - `--enforce-eager`：跳過 CUDA Graph 構建，降低啟動延遲（以部分吞吐為代價）。
 
-该配置可在保持高吞吐的同时，兼顾大模型的响应延迟需求。
+該配置可在保持高吞吐的同時，兼顧大模型的響應延遲需求。
 
-## 未来趋势与能力展望
+## 未來趨勢與能力展望
 
-`LWS` 已发布 v1.0，API 进入 v1（`leaderworkerset.x-k8s.io/v1`，与本文示例一致），其组级调度原语已被 `vLLM`、`llm-d` 等推理系统采纳为多机编排的运行基座。在未来，以下方向可能成为演进重点：
+`LWS` 已发布 v1.0，API 進入 v1（`leaderworkerset.x-k8s.io/v1`，與本文示例一致），其組級排程原語已被 `vLLM`、`llm-d` 等推理系統採納為多機編排的執行基座。在未來，以下方向可能成為演進重點：
 
-- **更强的异构资源调度表达能力**：引入 `GPU` 型号、`TPU topology-aware` 等特征调度；
-- **与 Service Mesh 结合**：`Worker` 动态加入统一负载平衡服务；
-- **与 HPA（水平自动扩展）协同**：根据负载自动调整 `Worker` 数量。
+- **更強的異構資源排程表達能力**：引入 `GPU` 型號、`TPU topology-aware` 等特徵排程；
+- **與 Service Mesh 結合**：`Worker` 動態加入統一負載平衡服務；
+- **與 HPA（水平自動擴展）協同**：根據負載自動調整 `Worker` 數量。
 
-此外，LWS 的控制器机制也可能被扩展用于训练作业、在线增量学习等更广泛的场景中，成为 AI native workload 的基础控制器抽象。
+此外，LWS 的控制器機制也可能被擴展用於訓練作業、線上增量學習等更廣泛的場景中，成為 AI native workload 的基礎控制器抽象。
 
-## 扩展阅读
+## 擴展閱讀
 
-- [LWS 官方文档](https://lws.sigs.k8s.io)
-- [Kubernetes 拓扑调度指南](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)
-- [vLLM 多节点部署实践](https://www.cecg.io/blog/multinode-llm-serving/)
+- [LWS 官方文件](https://lws.sigs.k8s.io)
+- [Kubernetes 拓撲排程指南](https://kubernetes.io/docs/concepts/scheduling-eviction/topology-spread-constraints/)
+- [vLLM 多節點部署實踐](https://www.cecg.io/blog/multinode-llm-serving/)
