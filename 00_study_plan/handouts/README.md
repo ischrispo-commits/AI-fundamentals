@@ -18,3 +18,4 @@ handouts/
 | 週  | 日  | 講義 | 主題 | 產生日期 |
 | --- | --- | ---- | ---- | -------- |
 | 1   | 1   | [d01_gpu_vs_cpu.md](w01/d01_gpu_vs_cpu.md) | GPU vs CPU、SIMT／warp／SM | 2026-11-10 |
+| 1   | 2   | [d02_gpu_memory_hbm.md](w01/d02_gpu_memory_hbm.md) | GPU 記憶體層級、HBM vs GDDR、頻寬公式、顯存 sizing | 2026-11-12 |

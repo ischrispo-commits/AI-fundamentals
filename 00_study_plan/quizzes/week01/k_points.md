@@ -24,6 +24,7 @@ W01D02-K4 | 1 | HBM 代際與代表 GPU：V100 HBM2 4 堆疊 900 GB/s；A100 HBM
 W01D02-K5 | 3 | 總頻寬 = 堆疊數 × 每堆疊頻寬；A100：5 × 1024 bits × 1.593 GHz × 2（DDR）÷ 8 = 2039 GB/s | 01_hbm_evolution.md:50-56 | 工程師
 W01D02-K6 | 2 | A100 對 V100：位寬 +25%（4 → 5 堆疊）、每 pin 數據率 +81%（1.76 → 3.19 Gbps/pin），相乘得 2.3× 頻寬；設計邏輯是「減少每鏈路信號線、增加鏈路數」，與 NVLink 3.0 一脈相承 | 01_hbm_evolution.md:58-70 | 工程師、CxO
 W01D02-K7 | 1 | V100 每個 SM 有 65536 個 4-byte 暫存器；register file 分 32 個 bank 對應 warp 的 32 個 thread | 02_gpu_memory.md:9-11,48 | 工程師
+W01D02-K8 | 2 | 權重記憶體 ≈ 參數量 × 每參數 bytes（FP16／BF16 2、INT8 1、INT4 0.5，未含量化 metadata）；70B FP16 ≈ 140 GB，80 GB 單卡放不下，141 GB 單卡被權重塞滿、沒有 KV Cache 空間 | 09_inference_system/memory_calc/memory_analysis.md:24-38；01_hbm_evolution.md:42-46 | 客戶工程師、CxO
 ```
 
 ## D3（11/18）A100 → H100 → B200/B300 代際、Tensor Core 精度、MIG
