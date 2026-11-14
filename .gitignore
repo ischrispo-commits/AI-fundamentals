@@ -200,3 +200,6 @@ Gemfile.lock
 
 # markdownlint config (personal preference, not enforced)
 .markdownlint.yaml
+
+# 個人讀書計畫：口說錄音不進 git
+00_study_plan/handouts/*/audio/

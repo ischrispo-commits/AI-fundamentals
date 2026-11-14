@@ -1,70 +1,70 @@
-# GPU 共享调度——MIG、MPS、Time-slicing 在 K8s 中的表达
+# GPU 共享排程——MIG、MPS、Time-slicing 在 K8s 中的表達
 
-不是所有 GPU 作业都需要独占一张卡。推理服务、Jupyter Notebook、小规模实验，这些场景下，一张 A100 跑 8 个推理实例比 8 张 A100 各跑 1 个经济得多。问题是在 K8s 中怎么把「共享」表达为调度器能理解的资源模型。
+不是所有 GPU 作業都需要獨佔一張卡。推理服務、Jupyter Notebook、小規模實驗，這些場景下，一張 A100 跑 8 個推理實例比 8 張 A100 各跑 1 個經濟得多。問題是在 K8s 中怎麼把「共享」表達為排程器能理解的資源模型。
 
-三种共享方式（MIG 硬切分、MPS 计算共享、Time-slicing 时分复用）对调度器来说是三种完全不同的资源抽象。
+三種共享方式（MIG 硬切分、MPS 計算共享、Time-slicing 分時多工）對排程器來說是三種完全不同的資源抽象。
 
 ---
 
-## 一、MIG：显存和 SM 的硬切分
+## 一、MIG：顯存和 SM 的硬切分
 
-MIG 将一张物理 GPU 切分为多个独立的 GPU 实例，每个实例有专属的显存、SM 和带宽。以 A100-80GB 为例，最多可以切为 7 个 10GB（`1g.10gb`×7）、3 个 20GB（`2g.20gb`×3）或 2 个 40GB（`3g.40gb`×2）。
+MIG 將一張物理 GPU 切分為多個獨立的 GPU 實例，每個實例有專屬的顯存、SM 和頻寬。以 A100-80GB 為例，最多可以切為 7 個 10GB（`1g.10gb`×7）、3 個 20GB（`2g.20gb`×3）或 2 個 40GB（`3g.40gb`×2）。
 
-对 K8s 调度器来说，每个 MIG 实例暴露为独立的 `nvidia.com/mig-<profile>` 资源，不是 `nvidia.com/gpu`，而是更细粒度的资源类型：
+對 K8s 排程器來說，每個 MIG 實例暴露為獨立的 `nvidia.com/mig-<profile>` 資源，不是 `nvidia.com/gpu`，而是更細粒度的資源類型：
 
 ```yaml
-# MIG 切分后的资源类型
-nvidia.com/mig-1g.10gb      # 1 个 GPU 计算切片 + 10GB 显存
-nvidia.com/mig-2g.20gb      # 2 个 GPU 计算切片 + 20GB 显存
-nvidia.com/mig-3g.40gb      # 3 个 GPU 计算切片 + 40GB 显存
+# MIG 切分後的資源類型
+nvidia.com/mig-1g.10gb      # 1 個 GPU 計算切片 + 10GB 顯存
+nvidia.com/mig-2g.20gb      # 2 個 GPU 計算切片 + 20GB 顯存
+nvidia.com/mig-3g.40gb      # 3 個 GPU 計算切片 + 40GB 顯存
 
-# Pod 请求一个 MIG 实例
+# Pod 請求一個 MIG 實例
 apiVersion: v1
 kind: Pod
 spec:
   containers:
   - resources:
       limits:
-        nvidia.com/mig-1g.10gb: 1    # 一个 10GB MIG 实例
+        nvidia.com/mig-1g.10gb: 1    # 一個 10GB MIG 實例
 ```
 
-**调度器的视角**：MIG 切分后，一张物理 GPU 对调度器来说变成了 7 个可调度单元。每个 MIG 实例的显存和计算资源被硬隔离，一个实例 OOM 不会影响同一张 GPU 上的其他实例。代价是 MIG 实例间不支持 P2P/IPC；MPS 可以在单个 MIG 实例内使用（每个实例一个 MPS server，每 GPU 上限 48 个 client），但不能跨实例共享。
+**排程器的視角**：MIG 切分后，一張物理 GPU 對排程器來說變成了 7 個可排程單元。每個 MIG 實例的顯存和計算資源被硬隔離，一個實例 OOM 不會影響同一張 GPU 上的其他實例。代價是 MIG 實例間不支援 P2P/IPC；MPS 可以在單個 MIG 實例內使用（每個實例一個 MPS server，每 GPU 上限 48 個 client），但不能跨實例共享。
 
-MIG 配置需要在节点层面预先设置（`nvidia-smi mig -cgi`），调度器无法动态切分——它只能调度到已切好的实例上。因此 MIG 适合推理场景中 GPU 资源规划相对固定的情况。
+MIG 配置需要在節點層面預先設定（`nvidia-smi mig -cgi`），排程器無法動態切分——它只能排程到已切好的實例上。因此 MIG 適合推理場景中 GPU 資源規劃相對固定的情況。
 
 ---
 
-## 二、MPS：计算资源共享，显存不隔离
+## 二、MPS：計算資源共享，顯存不隔離
 
-MPS 让多个进程的 CUDA kernel 在同一张 GPU 上真正并行执行，而不是 Default 模式下的时间片切换。这与 MIG 的关键区别：
+MPS 讓多個行程的 CUDA kernel 在同一張 GPU 上真正並行執行，而不是 Default 模式下的時間片切換。這與 MIG 的關鍵區別：
 
-| 维度         | MIG                                 | MPS                                   |
+| 維度         | MIG                                 | MPS                                   |
 | ------------ | ----------------------------------- | ------------------------------------- |
-| 显存         | 硬隔离，每个实例有固定显存上限      | 共享，一个进程 OOM 影响整张 GPU       |
-| 计算资源     | 硬隔离，每个实例有固定 SM 配额      | 共享，CUDA kernel 并行执行            |
-| P2P          | 不支持                              | 支持（受拓扑限制）                    |
-| K8s 资源模型 | 独立的资源类型 (`nvidia.com/mig-*`) | 不改变资源模型，调度器不知道 MPS 存在 |
+| 顯存         | 硬隔離，每個實例有固定顯存上限      | 共享，一個行程 OOM 影響整張 GPU       |
+| 計算資源     | 硬隔離，每個實例有固定 SM 配額      | 共享，CUDA kernel 並行執行            |
+| P2P          | 不支持                              | 支持（受拓撲限制）                    |
+| K8s 資源模型 | 獨立的資源類型 (`nvidia.com/mig-*`) | 不改變資源模型，排程器不知道 MPS 存在 |
 
-对 K8s 调度器来说，MPS 不改变资源模型——Pod 仍然请求 `nvidia.com/gpu: 1`，调度器不知道多个 Pod 被 MPS 调度到同一张 GPU 上。这意味着显存超分是 MPS 在 K8s 中的核心挑战：
+對 K8s 排程器來說，MPS 不改變資源模型——Pod 仍然請求 `nvidia.com/gpu: 1`，排程器不知道多個 Pod 被 MPS 排程到同一張 GPU 上。這意味著顯存超分是 MPS 在 K8s 中的核心挑戰：
 
 ```text
-GPU 有 80GB 显存
-  Pod A 请求 nvidia.com/gpu: 1 → 调度器看到 1/1 GPU，调度成功 → 实际占用 50GB
-  Pod B 请求 nvidia.com/gpu: 1 → 调度器看到 1/1 GPU，已经满了
-  （但 Pod A 声明了 1 GPU，默认调度器认为这张 GPU 已经被占用了）
+GPU 有 80GB 顯存
+  Pod A 請求 nvidia.com/gpu: 1 → 排程器看到 1/1 GPU，排程成功 → 實際佔用 50GB
+  Pod B 請求 nvidia.com/gpu: 1 → 排程器看到 1/1 GPU，已經滿了
+  （但 Pod A 宣告瞭 1 GPU，預設排程器認為這張 GPU 已經被佔用了）
 ```
 
-解决这个矛盾需要 Device Plugin 支持 GPU 共享策略。K8s 并没有一个官方的 GPU 共享资源名，`nvidia.com/gpu.shared` 这样的写法并不存在；业界的做法是在 Device Plugin 层把 `nvidia.com/gpu` 的 replicas 扩容来表达共享，代表性方案有三种：NVIDIA GPU Operator 的 Time-slicing（下一节）、阿里开源的 gpushare（用 `aliyun.com/gpu-mem` 请求显存额度）、HAMi 的 vGPU 配额（沿用 `nvidia.com/gpu`，显存/算力配额记在节点注记上）。
+解決這個矛盾需要 Device Plugin 支持 GPU 共享策略。K8s 並沒有一個官方的 GPU 共享資源名，`nvidia.com/gpu.shared` 這樣的寫法並不存在；業界的做法是在 Device Plugin 層把 `nvidia.com/gpu` 的 replicas 擴容來表達共享，代表性方案有三種：NVIDIA GPU Operator 的 Time-slicing（下一節）、阿里開源的 gpushare（用 `aliyun.com/gpu-mem` 請求顯存額度）、HAMi 的 vGPU 配額（沿用 `nvidia.com/gpu`，顯存/算力配額記在節點註記上）。
 
 ---
 
-## 三、Time-slicing：时分复用
+## 三、Time-slicing：分時多工
 
-NVIDIA GPU Operator（截至 2026-10 最新为 v26.7.x）支持 Time-slicing，在 Device Plugin 层面将一张物理 GPU 虚拟化为多个逻辑 GPU：
+NVIDIA GPU Operator（截至 2026-10 最新為 v26.7.x）支持 Time-slicing，在 Device Plugin 層面將一張物理 GPU 虛擬化為多個邏輯 GPU：
 
 ```yaml
 # GPU Operator 的 time-slicing 配置
-# 将一张物理 GPU 暴露为 4 个逻辑 GPU
+# 將一張物理 GPU 暴露為 4 個邏輯 GPU
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -78,28 +78,28 @@ data:
       timeSlicing:
         resources:
         - name: nvidia.com/gpu
-          replicas: 4          # 每张物理 GPU → 4 个逻辑 GPU
+          replicas: 4          # 每張物理 GPU → 4 個邏輯 GPU
 ```
 
-配置后，K8s 看到的 GPU 资源从 `8 × nvidia.com/gpu` 变为 `32 × nvidia.com/gpu`，每个 Pod 请求 `nvidia.com/gpu: 1` 时，实际获得的是 1/4 张 GPU 的时间片。
+配置后，K8s 看到的 GPU 資源從 `8 × nvidia.com/gpu` 變為 `32 × nvidia.com/gpu`，每個 Pod 請求 `nvidia.com/gpu: 1` 時，實際獲得的是 1/4 張 GPU 的時間片。
 
-**代价**：Time-slicing 不提供显存隔离。4 个 Pod 共享 80GB 显存，调度器不知道每个 Pod 实际用了多少。一个 Pod 的显存泄漏可以导致同 GPU 上的其他 Pod OOM。同时，时间片切换引入了调度延迟——推理服务的 P99 latency 会明显恶化。
+**代價**：Time-slicing 不提供顯存隔離。4 個 Pod 共享 80GB 顯存，排程器不知道每個 Pod 實際用了多少。一個 Pod 的顯存洩漏可以導致同 GPU 上的其他 Pod OOM。同時，時間片切換引入了排程延遲——推理服務的 P99 latency 會明顯惡化。
 
 ---
 
-## 四、三种共享方式的决策矩阵
+## 四、三種共享方式的決策矩陣
 
-| 场景                           | 推荐方式           | 原因                                                  |
+| 場景                           | 推薦方式           | 原因                                                  |
 | ------------------------------ | ------------------ | ----------------------------------------------------- |
-| 多租户推理，需要严格 SLA 隔离  | MIG                | 显存和 SM 硬隔离，互不影响                            |
-| 多个轻量推理服务，显存占用可控 | MPS + Time-slicing | MPS 提供计算并行，Time-slicing 让调度器能分配多个 Pod |
-| 开发/实验环境，隔离需求低      | Time-slicing       | 配置最简单，不需要手动切 GPU                          |
-| 训练作业                       | 不共享，独占整卡   | 训练对显存和带宽要求高，共享模式性能损失不可接受      |
+| 多租戶推理，需要嚴格 SLA 隔離  | MIG                | 顯存和 SM 硬隔離，互不影響                            |
+| 多個輕量推理服務，顯存佔用可控 | MPS + Time-slicing | MPS 提供計算並行，Time-slicing 讓排程器能分配多個 Pod |
+| 開發/實驗環境，隔離需求低      | Time-slicing       | 配置最簡單，不需要手動切 GPU                          |
+| 訓練作業                       | 不共享，獨佔整卡   | 訓練對顯存和頻寬要求高，共享模式效能損失不可接受      |
 
 ---
 
-## 五、相关资源
+## 五、相關資源
 
 - [NVIDIA GPU Operator Time-slicing](https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-sharing.html)
-- [GPU 进程与资源管理](../01_gpu_ops/07_gpu_process_management.md) — MPS 和 MIG 的命令行操作
-- [GPU 调度问题总览](01_gpu_scheduling_problem.md)
+- [GPU 行程與資源管理](../01_gpu_ops/07_gpu_process_management.md) — MPS 和 MIG 的命令行操作
+- [GPU 排程問題總覽](01_gpu_scheduling_problem.md)

@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: daily-quiz-w01-d04
+expected_outcome: |
+  第 1 週 D4 的每日測驗已存在（00_study_plan/quizzes/week01/d04_quiz.md），skill 應先發現並詢問是重寫、修訂還是另存，
+  不得默默覆蓋；若使用者未回應則另存為 d04_quiz_v2.md。產出 6 題：1～2 題來自 W01D03、第 3 題來自 W01D01、
+  第 4～5 題因 D-7/D-14 缺而改抽前測回收或本週 K 點、第 6 題為 OR 且受眾為「Demo」（星期四）。
+  解答每題含 K 點編號、口徑、file:line、常見錯因，且至少一題精緻化提問；check_quiz.py 回報 0 ERROR。

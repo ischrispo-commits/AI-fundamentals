@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: w01-d02-gpu-memory-handout
+expected_outcome: |
+  產生 00_study_plan/handouts/w01/d02_<slug>.md，繁體中文，含固定十個章節（0 先想再讀 … 8 可測知識點、來源索引），
+  第 8 節 K 點與 00_study_plan/quizzes/week01/k_points.md 的 D2 區段一致（W01D02-K1 ～ K7，可增不可改），
+  第 3 節每個數字都有口徑與 file:line，第 7 節 5 題無選擇題且第 1 題為自由回憶，
+  check_handout.py 回報 0 ERROR，並在 handouts/README.md 索引加一列。

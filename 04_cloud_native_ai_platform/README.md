@@ -2,71 +2,71 @@
 
 ## 1. 概述
 
-从单机跟得上 AI 工作负载到一个让上百个任务排队、弹性扩缩、多人共用的集群，中间缺的那一层就是云原生 AI 平台。这一章要回答的问题是：当 Kubernetes 这套调度体系撞上 GPU 这种异构、昂贵、具备独占性的硬件时，需要解决哪些问题。
+從單機跟得上 AI 工作負載到一個讓上百個任務排隊、彈性擴縮、多人共用的叢集，中間缺的那一層就是雲原生 AI 平台。這一章要回答的問題是：當 Kubernetes 這套排程體系撞上 GPU 這種異構、昂貴、具備獨佔性的硬體時，需要解決哪些問題。
 
-LLM 时代让这个问题变得更尖锐：模型可能一次要吃掉一整个机柜的 GPU，推理流量可能在几秒钟内翻十倍，而传统静态集群管理方式在资源调度、弹性伸缩和故障恢复上都已经跟不上了。云原生 AI 平台通过声明式 API、自动化控制器和不可变基础设施，为 AI 工作负载提供一个标准化的运行环境和智能化的管理能力。
+LLM 時代讓這個問題變得更尖銳：模型可能一次要吃掉一整個機櫃的 GPU，推理流量可能在幾秒鐘內翻十倍，而傳統靜態叢集管理方式在資源排程、彈性伸縮和故障恢復上都已經跟不上了。云原生 AI 平台透過宣告式 API、自動化控制器和不可變基礎設施，為 AI 工作負載提供一個標準化的執行環境和智慧化的管理能力。
 
-从架构上看，整个平台一般分四层来构建，每一层解决的问题都不一样：
+從架構上看，整個平台一般分四層來構建，每一層解決的問題都不一樣：
 
-1. **基础设施层 (Infrastructure)**：物理算力、网络和存储的底座。GPU/NPU/TPU 提供异构算力，InfiniBand/RoCE 支撑高速互联，分布式存储负责数据吞吐。
-2. **容器编排层 (Orchestration)**：把异构硬件抽象成统一的资源池。主体是 Kubernetes，配合 Device Plugin 完成设备上报，Operators（如 MPIOperator、PyTorchJob）接管任务的全生命周期。
-3. **资源调度与管理层 (Scheduling & Management)**：针对 AI 负载的“大并行 + 贵显存”特点做优化。Volcano / Kueue 处理批作业调度和 Gang Scheduling；HAMi / vGPU 做 GPU 细粒度切分与显存隔离。
-4. **AI 平台服务层 (Platform Services)**：最靠近开发者的一层，包括 Notebook 开发环境、分布式训练框架适配、模型推理服务，以及 Kubeflow / Argo 这类 MLOps 流水线。（当前目录尚未覆盖，规划中。）
+1. **基礎設施層 (Infrastructure)**：物理算力、網路和儲存的底座。GPU/NPU/TPU 提供異構算力，InfiniBand/RoCE 支撐高速互聯，分散式儲存負責資料吞吐。
+2. **容器編排層 (Orchestration)**：把異構硬體抽象成統一的資源池。主體是 Kubernetes，配合 Device Plugin 完成裝置上報，Operators（如 MPIOperator、PyTorchJob）接管任務的全生命週期。
+3. **資源排程與管理層 (Scheduling & Management)**：針對 AI 負載的“大並行 + 貴顯存”特點做最佳化。Volcano / Kueue 處理批作業排程和 Gang Scheduling；HAMi / vGPU 做 GPU 細粒度切分與顯存隔離。
+4. **AI 平台服務層 (Platform Services)**：最靠近開發者的一層，包括 Notebook 開發環境、分散式訓練框架適配、模型推理服務，以及 Kubeflow / Argo 這類 MLOps 流水線。（當前目錄尚未覆蓋，規劃中。）
 
-四层各管一段，合起来才构成一个能承接真实 AI 工作负载的平台。
+四層各管一段，合起來才構成一個能承接真實 AI 工作負載的平台。
 
-> **概念先行，实现跟进**：本目录聚焦云原生侧的工程实现。如果对 GPU 调度背后的概念层——为什么需要 Gang Scheduling、NVLink 拓扑对调度意味着什么、MIG/MPS/Time-slicing 的区别——感兴趣，先看 [GPU 调度为什么比 CPU 调度难](../03_ai_cluster_ops/04_gpu_scheduling/01_gpu_scheduling_problem.md) 和 [GPU 共享调度](../03_ai_cluster_ops/04_gpu_scheduling/04_gpu_sharing_scheduling.md)。
+> **概念先行，實現跟進**：本目錄聚焦雲原生側的工程實現。如果對 GPU 排程背後的概念層——為什麼需要 Gang Scheduling、NVLink 拓撲對排程意味著什麼、MIG/MPS/Time-slicing 的區別——感興趣，先看 [GPU 排程為什麼比 CPU 排程難](../03_ai_cluster_ops/04_gpu_scheduling/01_gpu_scheduling_problem.md) 和 [GPU 共享排程](../03_ai_cluster_ops/04_gpu_scheduling/04_gpu_sharing_scheduling.md)。
 
 ---
 
-## 2. 目录结构
+## 2. 目錄結構
 
-整套内容围绕三个支柱展开：**计算编排**、**资源管理**、**存储加速**。前者解决“GPU 如何被 Kubernetes 纳管”，中间解决“一张卡如何被多个任务安全共用”，后者解决“海量数据和模型检查点如何不成为短板”。
+整套內容圍繞三個支柱展開：**計算編排**、**資源管理**、**儲存加速**。前者解決“GPU 如何被 Kubernetes 納管”，中間解決“一張卡如何被多個任務安全共用”，後者解決“海量資料和模型檢查點如何不成為短板”。
 
-### 2.1 Kubernetes AI 基础设施
+### 2.1 Kubernetes AI 基礎設施
 
-Kubernetes 是云原生 AI 平台的操作系统。这一块解析 K8s 在 AI 场景下的关键组件与扩展机制，从底层的容器运行时 GPU 支持，一路讲到上层的分布式作业调度。
+Kubernetes 是云原生 AI 平台的作業系統。這一塊解析 K8s 在 AI 場景下的關鍵元件與擴展機制，從底層的容器執行時 GPU 支持，一路講到上層的分散式作業排程。
 
-- [Kubernetes GPU 管理与 AI 工作负载](k8s/README.md)：云原生 AI 基础设施建设指南与技术导图。
-- [NVIDIA Container Toolkit 原理](k8s/01_nvidia_container_toolkit_analysis.md)：容器使用 GPU 的底层机制解析。
-- [Device Plugin 原理](k8s/02_nvidia_k8s_device_plugin_analysis.md)：Kubernetes 设备插件机制源码分析。
-- [Kueue + HAMi 调度方案](k8s/03_kueue_hami_integration.md)：云原生作业队列与细粒度 GPU 共享机制。
-- [vLLM + LWS：Kubernetes 上的多机多卡推理方案](k8s/04_lws_intro.md)：Kubernetes 原生的大模型推理调度抽象。
-- [分布式推理框架](k8s/05_llm_d_intro.md)：基于 Kubernetes 的 LLM 推理架构设计。
-- [Containerd 日志分析](k8s/06_containerd_log_analysis.md)：云原生容器运行时的日志排查与分析。
+- [Kubernetes GPU 管理與 AI 工作負載](k8s/README.md)：云原生 AI 基礎設施建設指南與技術導圖。
+- [NVIDIA Container Toolkit 原理](k8s/01_nvidia_container_toolkit_analysis.md)：容器使用 GPU 的底層機制解析。
+- [Device Plugin 原理](k8s/02_nvidia_k8s_device_plugin_analysis.md)：Kubernetes 裝置外掛機制原始碼分析。
+- [Kueue + HAMi 排程方案](k8s/03_kueue_hami_integration.md)：雲原生作業佇列與細粒度 GPU 共享機制。
+- [vLLM + LWS：Kubernetes 上的多機多卡推理方案](k8s/04_lws_intro.md)：Kubernetes 原生的大模型推理排程抽象。
+- [分布式推理框架](k8s/05_llm_d_intro.md)：基於 Kubernetes 的 LLM 推理架構設計。
+- [Containerd 日志分析](k8s/06_containerd_log_analysis.md)：雲原生容器執行時的日誌排查與分析。
 
-### 2.2 GPU 资源管理与虚拟化
+### 2.2 GPU 資源管理與虛擬化
 
-GPU 是整个平台上最昂贵的资源，“如何让它不闲着、不浪费、并且能安全地被多个任务共享”是这一模块的主线。相关内容涵盖虚拟化、切分、远程调用以及池化技术。
+GPU 是整個平台上最昂貴的資源，“如何讓它不閒著、不浪費、並且能安全地被多個任務共享”是這一模組的主線。相關內容涵蓋虛擬化、切分、遠端呼叫以及池化技術。
 
-- [GPU 管理技术深度解析](gpu_manager/README.md)：GPU 虚拟化与切分专题的子门户，按文档、代码、配置三条线组织内容。
+- [GPU 管理技術深度解析](gpu_manager/README.md)：GPU 虛擬化與切分專題的子門戶，按文件、程式碼、配置三條線組織內容。
 
-**基础系列文档**：
+**基礎系列文件**：
 
-- [第一部分：基础理论篇](gpu_manager/01_basic_theory.md)：构建技术认知框架，解析传统模式局限性与核心技术体系。
-- [第二部分：虚拟化技术篇](gpu_manager/02_virtualization.md)：深入剖析硬件级、内核态与用户态虚拟化的核心实现机制。
-- [第三部分：资源管理与优化篇](gpu_manager/03_resource_management.md)：探讨 GPU 切分、CUDA 流及 MPS 等高效资源调度策略。
-- [第四部分：实践应用篇](gpu_manager/04_practice.md)：涵盖环境部署、监控运维及云平台集成的生产落地指南。
+- [第一部分：基礎理論篇](gpu_manager/01_basic_theory.md)：構建技術認知框架，解析傳統模式侷限性與核心技術體系。
+- [第二部分：虛擬化技術篇](gpu_manager/02_virtualization.md)：深入剖析硬體級、核心態與使用者態虛擬化的核心實現機制。
+- [第三部分：資源管理與最佳化篇](gpu_manager/03_resource_management.md)：探討 GPU 切分、CUDA 流及 MPS 等高效資源排程策略。
+- [第四部分：實踐應用篇](gpu_manager/04_practice.md)：涵蓋環境部署、監控運維及雲平台整合的生產落地指南。
 
-**HAMi 专题**：
+**HAMi 專題**：
 
-- [HAMi GPU 资源管理完整指南](gpu_manager/hami/hami-gpu-resources-guide.md)：异构算力管理与隔离实战指南。
-- [HAMi-WebUI 的 Prometheus 监控指标](gpu_manager/hami/hami-prometheus-metrics.md)：构建完善的 GPU 虚拟化可观测性体系。
-- [KAI vs HAMi 对比分析](gpu_manager/hami/KAI_vs_HAMi_Comparison.md)：以 KAI Scheduler 架构解析为主，含与 HAMi 的对比。
-- [GPU-Virtual-Service 与 HAMi-Core 实现对比](gpu_manager/hami/flex_ai_intro.md)：解析 CUDA 劫持机制与 LD_PRELOAD 用户态虚拟化方案，并与 HAMi-Core 做源码级对比。
+- [HAMi GPU 資源管理完整指南](gpu_manager/hami/hami-gpu-resources-guide.md)：異構算力管理與隔離實戰指南。
+- [HAMi-WebUI 的 Prometheus 監控指標](gpu_manager/hami/hami-prometheus-metrics.md)：構建完善的 GPU 虛擬化可觀測性體系。
+- [KAI vs HAMi 對比分析](gpu_manager/hami/KAI_vs_HAMi_Comparison.md)：以 KAI Scheduler 架構解析為主，含與 HAMi 的對比。
+- [GPU-Virtual-Service 與 HAMi-Core 實現對比](gpu_manager/hami/flex_ai_intro.md)：解析 CUDA 劫持機制與 LD_PRELOAD 使用者態虛擬化方案，並與 HAMi-Core 做原始碼級對比。
 
-**代码实现与配置**：
+**程式碼實現與配置**：
 
-- [完整实现代码](gpu_manager/code/)：GPU 调度器、虚拟化拦截与远程调用的参考实现代码。
-- [配置文件集合](gpu_manager/configs/)：提供适用于生产环境和多云平台的完整部署与配置参考。
+- [完整實現程式碼](gpu_manager/code/)：GPU 排程器、虛擬化攔截與遠端呼叫的參考實現程式碼。
+- [配置文件集合](gpu_manager/configs/)：提供適用於生產環境和多雲平台的完整部署與配置參考。
 
-### 2.3 高性能分布式存储
+### 2.3 高效能分散式儲存
 
-训练一轮次要读上亿张小图片、检查点动辄几十上百 GB、推理要持续命中 KV Cache——这些场景把存储系统推到了一个很尴尬的位置：既要像本地盘一样快，又要像对象存储一样能扩。JuiceFS、DeepSeek 3FS 这类云原生分布式文件系统正是冲着这个缝隙作答的。
+訓練一輪次要讀上億張小圖片、檢查點動輒幾十上百 GB、推理要持續命中 KV Cache——這些場景把儲存系統推到了一個很尷尬的位置：既要像本地盤一樣快，又要像物件儲存一樣能擴。JuiceFS、DeepSeek 3FS 這類雲原生分散式檔案系統正是衝著這個縫隙作答的。
 
-- [AI 存储：训练 I/O 和推理 KV Cache 的数据底座](storage/README.md)：JuiceFS、DeepSeek 3FS 与 ICMS 三个子专题的门户导航。
-- [JuiceFS 分布式文件系统](storage/juicefs/README.md)：数据与元数据分离的架构设计，兼容 POSIX 接口。
-- [文件修改机制分析](storage/juicefs/01_juicefs_file_modification_mechanism_analysis.md)：底层数据一致性与写入流程解析。
-- [后端存储变更手册](storage/juicefs/02_juicefs_backend_storage_migration_guide.md)：生产环境下的存储运维与数据迁移指南。
-- [DeepSeek 3FS 设计笔记](storage/deepseek_3fs/01_deepseek_3fs_design_notes.md)：高性能存储系统架构设计与特性分析。
-- [NVIDIA ICMS 架构解析](storage/inference_context_memory_storage/01_icms_architecture.md)：面向推理的 KV Cache 存储层架构解析（NVIDIA 已于 2026-03 更名为 CMX，本文沿用发布时名称）。
+- [AI 儲存：訓練 I/O 和推理 KV Cache 的資料底座](storage/README.md)：JuiceFS、DeepSeek 3FS 與 ICMS 三個子專題的門戶導航。
+- [JuiceFS 分散式檔案系統](storage/juicefs/README.md)：資料與後設資料分離的架構設計，兼容 POSIX 接口。
+- [檔案修改機制分析](storage/juicefs/01_juicefs_file_modification_mechanism_analysis.md)：底層資料一致性與寫入流程解析。
+- [後端儲存變更手冊](storage/juicefs/02_juicefs_backend_storage_migration_guide.md)：生產環境下的儲存運維與資料遷移指南。
+- [DeepSeek 3FS 設計筆記](storage/deepseek_3fs/01_deepseek_3fs_design_notes.md)：高效能儲存系統架構設計與特性分析。
+- [NVIDIA ICMS 架構解析](storage/inference_context_memory_storage/01_icms_architecture.md)：面向推理的 KV Cache 儲存層架構解析（NVIDIA 已於 2026-03 更名為 CMX，本文沿用釋出時名稱）。

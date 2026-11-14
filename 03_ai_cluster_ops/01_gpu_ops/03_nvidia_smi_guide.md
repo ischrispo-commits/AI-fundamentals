@@ -1,17 +1,17 @@
-# nvidia-smi 场景速查
+# nvidia-smi 場景速查
 
-`nvidia-smi` 有 100+ 个选项，但真正遇到问题时你只需要 5-6 个。本文按运维场景组织：从「看一眼」到「改配置」到「脚本化」，每个场景给出最精简的命令和输出解读。完整选项参考 `nvidia-smi -h`。
+`nvidia-smi` 有 100+ 個選項，但真正遇到問題時你只需要 5-6 個。本文按運維場景組織：從「看一眼」到「改配置」到「指令碼化」，每個場景給出最精簡的命令和輸出解讀。完整選項參考 `nvidia-smi -h`。
 
 ---
 
-## 一、快速扫一眼：「有什么 GPU？状态怎么样？」
+## 一、快速掃一眼：「有什麼 GPU？狀態怎麼樣？」
 
 ```bash
 nvidia-smi                          # 概要
-nvidia-smi -L                       # 仅型号 + UUID
+nvidia-smi -L                       # 僅型號 + UUID
 ```
 
-`nvidia-smi` 默认输出的每一列：
+`nvidia-smi` 預設輸出的每一列：
 
 ```text
 +---------------------------------------------------------------------------------------+
@@ -27,32 +27,32 @@ nvidia-smi -L                       # 仅型号 + UUID
 +-----------------------------------------+----------------------+----------------------+
 ```
 
-| 列                     | 含义                             | 关注点                                      |
+| 列                     | 含義                             | 關注點                                      |
 | ---------------------- | -------------------------------- | ------------------------------------------- |
-| `Fan`                  | 风扇转速百分比，`N/A` = 被动散热 | —                                           |
-| `Temp`                 | GPU 核心温度 (°C)                | T4 < 75°C，H100 < 70°C（满载时）            |
-| `Perf`                 | P0-P12 性能状态，P0 = 最高频率   | 如果一直是 P8，GPU 没有计算负载             |
-| `Pwr:Usage/Cap`        | 当前功耗 / 功耗上限 (W)          | Usage 远小于 Cap = 没跑满                   |
-| `Memory-Usage`         | 已用 / 总显存                    | OOM 前兆：`Used` 接近 `Total`               |
-| `GPU-Util`             | GPU 利用率（kernel 执行时间占比） | ≠ 算力利用率，详见下文「常见误区」          |
-| `Compute M.`           | 计算模式                         | `Default` = 多进程共享，`E. Process` = 独占 |
+| `Fan`                  | 風扇轉速百分比，`N/A` = 被動散熱 | —                                           |
+| `Temp`                 | GPU 核心溫度 (°C)                | T4 < 75°C，H100 < 70°C（滿載時）            |
+| `Perf`                 | P0-P12 效能狀態，P0 = 最高頻率   | 如果一直是 P8，GPU 沒有計算負載             |
+| `Pwr:Usage/Cap`        | 當前功耗 / 功耗上限 (W)          | Usage 遠小於 Cap = 沒跑滿                   |
+| `Memory-Usage`         | 已用 / 總顯存                    | OOM 前兆：`Used` 接近 `Total`               |
+| `GPU-Util`             | GPU 利用率（kernel 執行時間佔比） | ≠ 算力利用率，詳見下文「常見誤區」          |
+| `Compute M.`           | 計算模式                         | `Default` = 多行程共享，`E. Process` = 獨佔 |
 | `MIG M.`               | MIG 模式                         | A100/H100 支持 GPU 切分，`N/A` = 不支持     |
-| `Volatile Uncorr. ECC` | 本次运行中未纠正的 ECC 错误      | > 0 立即关注                                |
-| `Persistence-M`        | 持久化模式                       | `On` 可避免 GPU 空闲时驱动卸载              |
+| `Volatile Uncorr. ECC` | 本次執行中未糾正的 ECC 錯誤      | > 0 立即關注                                |
+| `Persistence-M`        | 持久化模式                       | `On` 可避免 GPU 空閒時驅動解除安裝              |
 
-**常见误区**：`GPU-Util` 只表示采样周期内有 Kernel 在跑，1 个 SM 在跑显示 100%，全部 SM 都在跑也显示 100%。注意 nvidia-smi 里没有单独的「SM 利用率」查询：`GPU-Util`、`--query-gpu=utilization.gpu`、`dmon` 的 `sm` 列同源于 NVML `nvmlDeviceGetUtilizationRates`，口径都是 kernel 执行时间占比。判断 GPU 是否真的被用满，用 §三 的 util + 显存利用率 + 功耗三件套，要量化 SM 占用则用 DCGM 的 SMACT (1002)。详见 [GPU 利用率是一个误导性指标](02_gpu_utilization_myth.md) 和 [GPU 忙不忙怎么判断](09_gpu_busy_check.md)。
+**常見誤區**：`GPU-Util` 只表示取樣週期內有 Kernel 在跑，1 個 SM 在跑顯示 100%，全部 SM 都在跑也顯示 100%。注意 nvidia-smi 裡沒有單獨的「SM 利用率」查詢：`GPU-Util`、`--query-gpu=utilization.gpu`、`dmon` 的 `sm` 列同源於 NVML `nvmlDeviceGetUtilizationRates`，口徑都是 kernel 執行時間佔比。判斷 GPU 是否真的被用滿，用 §三 的 util + 顯存利用率 + 功耗三件套，要量化 SM 佔用則用 DCGM 的 SMACT (1002)。詳見 [GPU 利用率是一個誤導性指標](02_gpu_utilization_myth.md) 和 [GPU 忙不忙怎麼判斷](09_gpu_busy_check.md)。
 
 ---
 
-## 二、谁在用什么？「哪个进程占了多少显存？」
+## 二、誰在用什麼？「哪個行程佔了多少顯存？」
 
 ```bash
-nvidia-smi pmon -i 0                # 进程级实时
-nvidia-smi --query-compute-apps=pid,used_memory --format=csv  # 脚本化
+nvidia-smi pmon -i 0                # 行程級實時
+nvidia-smi --query-compute-apps=pid,used_memory --format=csv  # 指令碼化
 nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader
 ```
 
-`pmon` 输出：
+`pmon` 輸出：
 
 ```text
 # gpu   pid  type   sm   mem   enc   dec   command
@@ -60,16 +60,16 @@ nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,nohead
     0  4210     C   45    12     0     0   python3
 ```
 
-列含义：
+列含義：
 
-| 列        | 含义                                 |
+| 列        | 含義                                 |
 | --------- | ------------------------------------ |
-| `type`    | `C` = 计算，`G` = 图形               |
-| `sm`      | 该进程的 kernel 执行时间占比（口径同 GPU-Util，进程级） |
-| `mem`     | 该进程的显存带宽利用率               |
-| `enc/dec` | 编码/解码引擎利用率                  |
+| `type`    | `C` = 計算，`G` = 圖形               |
+| `sm`      | 該行程的 kernel 執行時間佔比（口徑同 GPU-Util，行程級） |
+| `mem`     | 該行程的顯存頻寬利用率               |
+| `enc/dec` | 編碼/解碼引擎利用率                  |
 
-**脚本化示例**（查找显存占用 TOP 3）：
+**指令碼化示例**（查詢顯存佔用 TOP 3）：
 
 ```bash
 nvidia-smi --query-compute-apps=pid,process_name,used_memory \
@@ -78,205 +78,205 @@ nvidia-smi --query-compute-apps=pid,process_name,used_memory \
 
 ---
 
-## 三、跑满了没？「GPU 在干活还是闲着？」
+## 三、跑滿了沒？「GPU 在幹活還是閒著？」
 
-### 3.1 实时滚动
+### 3.1 實時滾動
 
 ```bash
-nvidia-smi dmon -s mucp -d 2        # 显存用量 + 利用率四列 + 时钟 + 功耗温度，每 2 秒
+nvidia-smi dmon -s mucp -d 2        # 顯存用量 + 利用率四列 + 時鐘 + 功耗溫度，每 2 秒
 ```
 
-`-s` 选项控制显示哪些列（按 nvidia-smi 手册）：
+`-s` 選項控制顯示哪些列（按 nvidia-smi 手冊）：
 
-| -s 选项 | 列含义                                                  |
+| -s 選項 | 列含義                                                  |
 | ------- | ------------------------------------------------------- |
-| `m`     | 显存用量：fb（framebuffer）+ bar1                       |
-| `u`     | 利用率四列：sm / mem / enc / dec（sm、mem 口径同 GPU-Util） |
-| `c`     | SM 时钟 + 显存时钟 (MHz)                                |
-| `p`     | 功耗 + 温度                                             |
-| `v`     | power/thermal violations（限频事件计数）                |
-| `t`     | PCIe 吞吐 (MB/s)；dmon 没有 NVLink 吞吐列               |
+| `m`     | 顯存用量：fb（framebuffer）+ bar1                       |
+| `u`     | 利用率四列：sm / mem / enc / dec（sm、mem 口徑同 GPU-Util） |
+| `c`     | SM 時鐘 + 顯存時鐘 (MHz)                                |
+| `p`     | 功耗 + 溫度                                             |
+| `v`     | power/thermal violations（限頻事件計數）                |
+| `t`     | PCIe 吞吐 (MB/s)；dmon 沒有 NVLink 吞吐列               |
 
-常用组合：`-s mucp`（显存用量 + 利用率四列 + 时钟 + 功耗温度），一行看 GPU 负载全景。
+常用組合：`-s mucp`（顯存用量 + 利用率四列 + 時鐘 + 功耗溫度），一行看 GPU 負載全景。
 
-### 3.2 脚本化单次查询
+### 3.2 指令碼化單次查詢
 
 ```bash
-# GPU 利用率 + 显存利用率
+# GPU 利用率 + 顯存利用率
 nvidia-smi --query-gpu=utilization.gpu,utilization.memory --format=csv,noheader
 
 # 功耗
 nvidia-smi --query-gpu=power.draw,power.limit --format=csv,noheader
 
-# 时钟
+# 時鐘
 nvidia-smi --query-gpu=clocks.current.sm,clocks.current.memory --format=csv,noheader
 ```
 
-### 3.3 解读
+### 3.3 解讀
 
-判读靠三件套：`utilization.gpu`（kernel 活跃）+ `utilization.memory`（显存带宽）+ 功耗。注意 `utilization.gpu` 高只说明 kernel 执行时间占比高，不能单独推出计算饱和。
+判讀靠三件套：`utilization.gpu`（kernel 活躍）+ `utilization.memory`（顯存頻寬）+ 功耗。注意 `utilization.gpu` 高只說明 kernel 執行時間佔比高，不能單獨推出計算飽和。
 
-| 现象                                              | 含义             | 方向                                                       |
+| 現象                                              | 含義             | 方向                                                       |
 | ------------------------------------------------- | ---------------- | ---------------------------------------------------------- |
-| util.gpu < 20%，util.memory > 80%                 | Memory-bound 信号 | 检查是否未用 pinned memory 或 batch 太小                   |
-| util.gpu > 80%，util.memory < 30%，功耗接近 power limit | 在真算，疑似计算重负载 | 确认饱和用 DCGM SMACT (1002)；想更快就换更强的 GPU        |
-| util.gpu 低，`Perf` 始终是 P8，功耗贴近空闲值     | GPU 无计算负载   | 进程可能卡在 CPU 端                                       |
+| util.gpu < 20%，util.memory > 80%                 | Memory-bound 訊號 | 檢查是否未用 pinned memory 或 batch 太小                   |
+| util.gpu > 80%，util.memory < 30%，功耗接近 power limit | 在真算，疑似計算重負載 | 確認飽和用 DCGM SMACT (1002)；想更快就換更強的 GPU        |
+| util.gpu 低，`Perf` 始終是 P8，功耗貼近空閒值     | GPU 無計算負載   | 行程可能卡在 CPU 端                                       |
 
 ---
 
-## 四、健康吗？「温度/功耗/ECC/拓扑有没有异常？」
+## 四、健康嗎？「溫度/功耗/ECC/拓撲有沒有異常？」
 
-### 4.1 温度和功耗
+### 4.1 溫度和功耗
 
 ```bash
 nvidia-smi -q -d TEMPERATURE,POWER
 ```
 
-关键字段：`GPU Current Temp`、`GPU Slowdown Temp`（撞此温度后 GPU 自动降频）、`Power Limit`、`Power Draw`。
+關鍵欄位：`GPU Current Temp`、`GPU Slowdown Temp`（撞此溫度後 GPU 自動降頻）、`Power Limit`、`Power Draw`。
 
-正常范围：H100 满载 ~65-72°C、T4 ~70-78°C。功耗应显著低于 `Power Limit`：如果 `Power Draw` 一直等于 `Power Limit`，GPU 在功耗墙上被限制，换更强的散热或降低功耗配置。
+正常範圍：H100 滿載 ~65-72°C、T4 ~70-78°C。功耗應顯著低於 `Power Limit`：如果 `Power Draw` 一直等於 `Power Limit`，GPU 在功耗牆上被限制，換更強的散熱或降低功耗配置。
 
-### 4.2 ECC 错误
+### 4.2 ECC 錯誤
 
 ```bash
 nvidia-smi -q -d ECC
 ```
 
-- **Volatile ECC > 0**：本次驱动加载以来已纠正的错误。如果是 DRAM 错误且持续增长，GPU 可能有硬件问题
-- **Aggregate ECC 缓慢增长**：出厂以来的累计值，单 GPU 累计 < 100 属正常老化
-- **Uncorrectable ECC > 0**：严重，数据完整性风险。Ampere 及之后架构优先看 Remapped Rows（row remapping 兜底），如需清计数可 `nvidia-smi -i <ID> --reset-ecc-errors=volatile`，仍在增长则更换 GPU
+- **Volatile ECC > 0**：本次驅動載入以來已糾正的錯誤。如果是 DRAM 錯誤且持續增長，GPU 可能有硬體問題
+- **Aggregate ECC 緩慢增長**：出廠以來的累計值，單 GPU 累計 < 100 屬正常老化
+- **Uncorrectable ECC > 0**：嚴重，資料完整性風險。Ampere 及之後架構優先看 Remapped Rows（row remapping 兜底），如需清計數可 `nvidia-smi -i <ID> --reset-ecc-errors=volatile`，仍在增長則更換 GPU
 
-区分 SRAM 和 DRAM 错误：SRAM 错误通常来自宇宙射线（单粒子翻转），单次出现无影响；DRAM 错误频繁出现则表明显存颗粒老化。
+區分 SRAM 和 DRAM 錯誤：SRAM 錯誤通常來自宇宙射線（單粒子翻轉），單次出現無影響；DRAM 錯誤頻繁出現則表明顯存顆粒老化。
 
-### 4.3 NVLink 和拓扑
+### 4.3 NVLink 和拓撲
 
 ```bash
-nvidia-smi topo -m                       # 连接矩阵
-nvidia-smi nvlink --status               # 每条 link 的状态 + 带宽
+nvidia-smi topo -m                       # 連線矩陣
+nvidia-smi nvlink --status               # 每條 link 的狀態 + 頻寬
 nvidia-smi nvlink --capabilities         # NVLink 版本和能力
-nvidia-smi nvlink --error-counters       # 错误计数
+nvidia-smi nvlink --error-counters       # 錯誤計數
 ```
 
-拓扑标识解读：
+拓撲標識解讀：
 
-| 标识   | 含义                                | 性能            |
+| 標識   | 含義                                | 性能            |
 | ------ | ----------------------------------- | --------------- |
-| `NV12` | 12 条 NVLink 直连                   | ~600 GB/s 双向  |
+| `NV12` | 12 條 NVLink 直連                   | ~600 GB/s 雙向  |
 | `PIX`  | 同一 PCIe switch，P2P 可用          | ~32 GB/s (Gen4) |
-| `NODE` | 同一 NUMA node，经 PCIe Host Bridge | ~28 GB/s        |
-| `SYS`  | 跨 NUMA，经 QPI/UPI                 | 最慢            |
+| `NODE` | 同一 NUMA node，經 PCIe Host Bridge | ~28 GB/s        |
+| `SYS`  | 跨 NUMA，經 QPI/UPI                 | 最慢            |
 
-详见 [GPU 集群健康检查](06_gpu_health_check.md) L2 流程和 [NCCL 通信路径逐层压测](../03_nccl/06_nccl_path_benchmark.md) 的实测数据。
+詳見 [GPU 叢集健康檢查](06_gpu_health_check.md) L2 流程和 [NCCL 通訊路徑逐層壓測](../03_nccl/06_nccl_path_benchmark.md) 的實測資料。
 
-### 4.4 PCIe 链路
+### 4.4 PCIe 鏈路
 
 ```bash
 nvidia-smi -q -d PCIE
 ```
 
-确保 `Current Link Width` = `Max Link Width`（通常都是 x16）。如果 Gen4 卡运行在 Gen3 或 x16 掉到 x8：检查主板 BIOS 设置、PCIe 扩展器、Riser 卡。
+確保 `Current Link Width` = `Max Link Width`（通常都是 x16）。如果 Gen4 卡執行在 Gen3 或 x16 掉到 x8：檢查主機板 BIOS 設定、PCIe 擴展器、Riser 卡。
 
 ---
 
-## 五、出错了？「XID 错误和 GPU 重置」
+## 五、出錯了？「XID 錯誤和 GPU 重置」
 
 ```bash
-dmesg | grep -i "NVRM\|Xid"                      # 内核日志中的 XID 错误
-nvidia-smi -i <ID> --reset-ecc-errors=volatile   # 清零 volatile ECC 计数（aggregate 不可清）
-nvidia-smi -i 0 --gpu-reset                      # 重置 GPU：需 root，目标 GPU 及 NVLink peer 空闲；Ampere 之前架构的多卡互联 GPU 须用同一命令一起重置。官方注明生产环境不建议常规使用
+dmesg | grep -i "NVRM\|Xid"                      # 核心日誌中的 XID 錯誤
+nvidia-smi -i <ID> --reset-ecc-errors=volatile   # 清零 volatile ECC 計數（aggregate 不可清）
+nvidia-smi -i 0 --gpu-reset                      # 重置 GPU：需 root，目標 GPU 及 NVLink peer 空閒；Ampere 之前架構的多卡互聯 GPU 須用同一命令一起重置。官方註明生產環境不建議常規使用
 ```
 
-常见 XID 错误速查（含义按 NVIDIA Xid Errors 目录，Release 620，as-of 2026-11）：
+常見 XID 錯誤速查（含義按 NVIDIA Xid Errors 目錄，Release 620，as-of 2026-11）：
 
-| XID | 官方含义                                                            | 处理                                              |
+| XID | 官方含義                                                            | 處理                                              |
 | --- | ------------------------------------------------------------------- | ------------------------------------------------- |
-| 31  | GPU memory page fault（MMU 报告的页面错误，多为应用非法地址访问）   | 单次出现多为应用层问题，复现则排查应用            |
-| 43  | GPU stopped processing（应用触发软件故障，GPU 仍健康）              | 多为应用错误；复现时定位应用，不是硬件问题        |
-| 45  | Preemptive cleanup, due to previous errors（此前错误的连带清理）    | 伴随其他 XID 时先处理根因；单独出现重启进程/GPU   |
-| 48  | Double Bit ECC Error（双比特 ECC 错误）                             | Ampere+ 走 row remapping；持续出现评估更换        |
-| 79  | GPU has fallen off the bus（驱动经 PCIe 访问 GPU 失败，多指向 PCIe 链路/硬件故障） | 官方建议整机重启；复现时检查 PCIe 插槽、供电、Riser，跑 DCGM diag |
-| 119 | GSP RPC Timeout（GSP 固件响应超时）                                 | 记录日志并观察；高频复现先更新驱动，仍复现报支持  |
+| 31  | GPU memory page fault（MMU 報告的頁面錯誤，多為應用非法地址訪問）   | 單次出現多為應用層問題，復現則排查應用            |
+| 43  | GPU stopped processing（應用觸發軟體故障，GPU 仍健康）              | 多為應用錯誤；復現時定位應用，不是硬體問題        |
+| 45  | Preemptive cleanup, due to previous errors（此前錯誤的連帶清理）    | 伴隨其他 XID 時先處理根因；單獨出現重啟行程/GPU   |
+| 48  | Double Bit ECC Error（雙位元 ECC 錯誤）                             | Ampere+ 走 row remapping；持續出現評估更換        |
+| 79  | GPU has fallen off the bus（驅動經 PCIe 訪問 GPU 失敗，多指向 PCIe 鏈路/硬件故障） | 官方建議整機重啟；復現時檢查 PCIe 插槽、供電、Riser，跑 DCGM diag |
+| 119 | GSP RPC Timeout（GSP 韌體響應超時）                                 | 記錄日誌並觀察；高頻復現先更新驅動，仍復現報支援  |
 
 ---
 
-## 六、我要改点什么？「功耗 / 计算模式 / 时钟 / 持久化」
+## 六、我要改點什麼？「功耗 / 計算模式 / 時鐘 / 持久化」
 
 ```bash
 # 功耗
 nvidia-smi -i 0 -pl 300              # 限制 GPU 0 最大 300W
-nvidia-smi -i 0 -q -d POWER          # 确认生效
+nvidia-smi -i 0 -q -d POWER          # 確認生效
 
-# 计算模式
+# 計算模式
 nvidia-smi -i 0 -c 0                 # 0=Default（共享）
-#                                    2=Prohibited（禁止新进程，测试用）
-#                                    3=EXCLUSIVE_PROCESS（单进程独占）
+#                                    2=Prohibited（禁止新行程，測試用）
+#                                    3=EXCLUSIVE_PROCESS（單行程獨佔）
 
-# 时钟（基准测试需要稳定 clock 时）
-nvidia-smi -lgc 1500,2100            # 锁定 GPU 时钟在 1500-2100 MHz
-nvidia-smi -lmc 5001,5001            # 锁定显存时钟
-nvidia-smi -rgc && nvidia-smi -rmc   # 恢复默认
+# 時鐘（基準測試需要穩定 clock 時）
+nvidia-smi -lgc 1500,2100            # 鎖定 GPU 時鐘在 1500-2100 MHz
+nvidia-smi -lmc 5001,5001            # 鎖定顯存時鐘
+nvidia-smi -rgc && nvidia-smi -rmc   # 恢復預設
 
 # 持久化模式
-nvidia-smi -pm 1                     # 启用（推荐生产环境）
-nvidia-smi -q -i 0 | grep Persistence # 确认
+nvidia-smi -pm 1                     # 啟用（推薦生產環境）
+nvidia-smi -q -i 0 | grep Persistence # 確認
 ```
 
-**持久化模式**值得单独说明：关闭时，GPU 在最后一个进程退出后会被驱动卸载（`nvidia-smi` 仍然能看到但延迟显著升高）。启用后驱动常驻，避免空闲 GPU 的冷启动延迟（通常 1-2 秒）。生产环境建议 `nvidia-persistenced` 服务。
+**持久化模式**值得單獨說明：關閉時，GPU 在最後一個行程退出後會被驅動解除安裝（`nvidia-smi` 仍然能看到但延遲顯著升高）。啟用後驅動常駐，避免空閒 GPU 的冷啟動延遲（通常 1-2 秒）。生產環境建議 `nvidia-persistenced` 服務。
 
 ---
 
-## 七、多实例 GPU（MIG）
+## 七、多實例 GPU（MIG）
 
-A100/H100 支持将一张物理 GPU 切分为多个独立的 GPU 实例，每个实例有专属的显存、SM 和带宽。
+A100/H100 支援將一張物理 GPU 切分為多個獨立的 GPU 實例，每個實例有專屬的顯存、SM 和頻寬。
 
 ```bash
-nvidia-smi mig -lgip                  # 列出可用的 GPU 实例配置
-nvidia-smi mig -cgi 19,19,19 -C       # 创建 3 个 2g.20gb 实例（A100-80GB 上限即 3 个；
-                                      # profile ID 19 等取值以现场 -lgip 输出为准）
-nvidia-smi mig -dci                   # 销毁所有实例
-nvidia-smi mig -dci -gi 0             # 销毁指定 GPU 实例
+nvidia-smi mig -lgip                  # 列出可用的 GPU 實例配置
+nvidia-smi mig -cgi 19,19,19 -C       # 建立 3 個 2g.20gb 實例（A100-80GB 上限即 3 個；
+                                      # profile ID 19 等取值以現場 -lgip 輸出為準）
+nvidia-smi mig -dci                   # 銷燬所有實例
+nvidia-smi mig -dci -gi 0             # 銷燬指定 GPU 實例
 ```
 
-> MIG 模式需要重启 GPU 才能切换（`nvidia-smi -i <ID> -r`：需 root，GPU 上无运行中的进程，NVLink peer 也须空闲），且与 P2P 互斥：切分为 MIG 后 GPU 间不再支持 P2P 通信。
+> MIG 模式需要重啟 GPU 才能切換（`nvidia-smi -i <ID> -r`：需 root，GPU 上無執行中的行程，NVLink peer 也須空閒），且與 P2P 互斥：切分為 MIG 后 GPU 間不再支援 P2P 通信。
 
 ---
 
-## 八、实时监控
+## 八、實時監控
 
 ```bash
 nvidia-smi -l 5                       # 每 5 秒刷新概要
-nvidia-smi dmon -s mucp -d 2          # 每 2 秒滚动
+nvidia-smi dmon -s mucp -d 2          # 每 2 秒滾動
 watch -n 1 nvidia-smi --query-gpu=utilization.gpu,utilization.memory,temperature.gpu,power.draw --format=csv,noheader
 ```
 
-容器环境（Docker/K8s）中，`nvidia-smi` 默认只显示容器可见的 GPU（通过 `NVIDIA_VISIBLE_DEVICES` 控制）。如果容器内看不到预期的 GPU，检查 `NVIDIA_VISIBLE_DEVICES` 或容器的 `--gpus` 参数。
+容器環境（Docker/K8s）中，`nvidia-smi` 預設只顯示容器可見的 GPU（透過 `NVIDIA_VISIBLE_DEVICES` 控制）。如果容器內看不到預期的 GPU，檢查 `NVIDIA_VISIBLE_DEVICES` 或容器的 `--gpus` 參數。
 
 ---
 
-## 九、`--query-gpu` 脚本化速查
+## 九、`--query-gpu` 指令碼化速查
 
-脚本化场景下，`--query-gpu` + `--format=csv,noheader,nounits` 是最佳组合：输出干净、可管道、不依赖 `-q` 的冗长格式。
+指令碼化場景下，`--query-gpu` + `--format=csv,noheader,nounits` 是最佳組合：輸出乾淨、可管道、不依賴 `-q` 的冗長格式。
 
 ```bash
 # 通用格式
-nvidia-smi --query-gpu=<属性1>,<属性2> --format=csv,noheader,nounits
+nvidia-smi --query-gpu=<屬性1>,<屬性2> --format=csv,noheader,nounits
 ```
 
-| 场景     | `--query-gpu=` 属性                                                         |
+| 場景     | `--query-gpu=` 屬性                                                         |
 | -------- | --------------------------------------------------------------------------- |
-| 显存     | `memory.total,memory.used,memory.free`                                      |
+| 顯存     | `memory.total,memory.used,memory.free`                                      |
 | 利用率   | `utilization.gpu,utilization.memory`                                        |
-| 温度     | `temperature.gpu,temperature.memory`                                        |
+| 溫度     | `temperature.gpu,temperature.memory`                                        |
 | 功耗     | `power.draw,power.limit`                                                    |
-| 时钟     | `clocks.current.sm,clocks.current.memory`                                   |
+| 時鐘     | `clocks.current.sm,clocks.current.memory`                                   |
 | PCIe     | `pcie.link.gen.current,pcie.link.width.current`                             |
-| 风扇     | `fan.speed`                                                                 |
+| 風扇     | `fan.speed`                                                                 |
 | ECC      | `ecc.errors.corrected.volatile.total,ecc.errors.uncorrected.volatile.total` |
-| 计算模式 | `compute_mode`                                                              |
+| 計算模式 | `compute_mode`                                                              |
 | MIG      | `mig.mode.current`                                                          |
-| 进程     | 用 `--query-compute-apps` 替代                                              |
+| 行程     | 用 `--query-compute-apps` 替代                                              |
 
-**一行监控脚本示例**（打印所有 GPU 的 ID + GPU 利用率 + 显存占用 + 温度）：
+**一行監控指令碼示例**（打印所有 GPU 的 ID + GPU 利用率 + 顯存佔用 + 溫度）：
 
 ```bash
 nvidia-smi --query-gpu=index,utilization.gpu,memory.used,temperature.gpu \
@@ -286,12 +286,12 @@ nvidia-smi --query-gpu=index,utilization.gpu,memory.used,temperature.gpu \
 
 ---
 
-## 十、相关资源
+## 十、相關資源
 
-- [GPU 利用率是一个误导性指标](02_gpu_utilization_myth.md)：读完再回头看 `GPU-Util` 这列
-- [GPU 忙不忙怎么判断](09_gpu_busy_check.md)：util + 功耗温度排假忙，DCGM SMACT 看真实 SM 占用
-- [GPU 集群健康检查](06_gpu_health_check.md)：L1/L2/L3 三层检查流程，含 GPU 7 真实异常案例
-- [NVLink 诊断与实操](../../01_hardware_architecture/nvlink/nvlink_diagnostics.md)：`nvlink --status` 输出的深度解读
-- [DCGM 监控实操](05_dcgm_monitoring.md)：长期趋势和 Prometheus 集成
-- [GPU 进程与资源管理](07_gpu_process_management.md)：Compute Mode、CUDA_VISIBLE_DEVICES、NUMA 亲和性
-- [NVIDIA nvidia-smi 文档](https://docs.nvidia.com/deploy/driver-nvidia-smi/index.html)
+- [GPU 利用率是一個誤導性指標](02_gpu_utilization_myth.md)：讀完再回頭看 `GPU-Util` 這列
+- [GPU 忙不忙怎麼判斷](09_gpu_busy_check.md)：util + 功耗溫度排假忙，DCGM SMACT 看真實 SM 占用
+- [GPU 叢集健康檢查](06_gpu_health_check.md)：L1/L2/L3 三層檢查流程，含 GPU 7 真實異常案例
+- [NVLink 診斷與實操](../../01_hardware_architecture/nvlink/nvlink_diagnostics.md)：`nvlink --status` 輸出的深度解讀
+- [DCGM 監控實操](05_dcgm_monitoring.md)：長期趨勢和 Prometheus 集成
+- [GPU 行程與資源管理](07_gpu_process_management.md)：Compute Mode、CUDA_VISIBLE_DEVICES、NUMA 親和性
+- [NVIDIA nvidia-smi 文件](https://docs.nvidia.com/deploy/driver-nvidia-smi/index.html)

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Infra GTM 速成路線圖</title>
+<style>
+  :root{--bg:#f7f7f5;--card:#ffffff;--ink:#1f2328;--muted:#6b7280;--line:#e5e7eb;--m1:#2563eb;--m2:#0d9488;--m3:#d97706;--m4:#7c3aed;--rev:#6b7280;--ok:#16a34a;--today:#ef4444}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1115;--card:#171a21;--ink:#e6e8eb;--muted:#9aa3ad;--line:#2a2f3a;--m1:#60a5fa;--m2:#2dd4bf;--m3:#fbbf24;--m4:#a78bfa;--rev:#9aa3ad;--ok:#4ade80;--today:#f87171}}
+  :root[data-theme="dark"]{--bg:#0f1115;--card:#171a21;--ink:#e6e8eb;--muted:#9aa3ad;--line:#2a2f3a;--m1:#60a5fa;--m2:#2dd4bf;--m3:#fbbf24;--m4:#a78bfa;--rev:#9aa3ad;--ok:#4ade80;--today:#f87171}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",Segoe UI,sans-serif}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px 16px 64px}
+  h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px}
+  .sub{color:var(--muted);margin:0 0 16px}
+  .bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--ok);width:0;transition:width .3s}
+  .stats{display:flex;gap:16px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin:8px 0 0}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin:10px 0 0}.legend b{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:middle}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+  .wk{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--m1);border-radius:10px;padding:12px 14px;cursor:pointer;position:relative}
+  .wk[data-m="2"]{border-left-color:var(--m2)}.wk[data-m="3"]{border-left-color:var(--m3)}.wk[data-m="4"]{border-left-color:var(--m4)}.wk[data-m="r"]{border-left-color:var(--rev);border-left-style:dashed}
+  .wk.today{outline:2px solid var(--today)}.wk.today::after{content:"本週";position:absolute;top:10px;right:12px;font-size:11px;color:var(--today);font-weight:600}
+  .wk h3{margin:0;font-size:15px}.wk .d{font-size:12px;color:var(--muted)}.wk .q{font-size:13px;margin:6px 0}.wk .tags{display:flex;gap:6px;flex-wrap:wrap}
+  .tag{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;color:var(--muted)}.tag.exam{border-color:var(--today);color:var(--today)}
+  .mini{height:5px;background:var(--line);border-radius:4px;margin-top:10px;overflow:hidden}.mini>i{display:block;height:100%;background:var(--ok)}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:12px}
+  .panel.hidden{display:none}
+  table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:600;font-size:12px}
+  td.c{text-align:center;white-space:nowrap}input[type=checkbox]{width:16px;height:16px;accent-color:var(--ok)}
+  .routine{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}.routine div{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}.routine b{display:block;font-size:12px;color:var(--muted)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}button{font:inherit;font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+  a{color:inherit}
+  @media (max-width:600px){.wrap{padding:16px 16px 48px}td,th{padding:6px 4px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AI Infra GTM 速成班：12 週路線圖</h1>
+  <p class="sub">2026-11-16 ～ 2027-02-05 ・ 目標職缺 TMM／AI Evangelist／PMM／TAM ・ 點週卡展開每日勾選（進度存在這個瀏覽器）。課綱見 <a href="01_syllabus.md">01_syllabus.md</a>。</p>
+  <div class="bar"><i id="pbar"></i></div>
+  <div class="stats"><span id="pdone"></span><span id="ptoday"></span></div>
+  <div class="legend"><span><b style="background:var(--m1)"></b>模組一 硬體與系統</span><span><b style="background:var(--m2)"></b>模組二 集群・網路・雲原生</span><span><b style="background:var(--m3)"></b>模組三 LLM・訓練・推理</span><span><b style="background:var(--m4)"></b>模組四 應用層與 GTM</span><span><b style="background:var(--rev)"></b>間隔複習週</span></div>
+
+  <h2>十二週</h2>
+  <div class="grid" id="grid"></div>
+  <div class="panel hidden" id="detail"></div>
+
+  <h2>每日節奏（平日 2 小時）</h2>
+  <div class="routine">
+    <div><b>上午 10 分</b>閉卷做當日測驗 → 填信心 → 對答案 → 錯題進錯題本</div>
+    <div><b>70 分</b>讀講義：先想再讀 → 情境 → 概念 → 數字口徑 → 誤區 → 四職缺口徑 → 課後 5 題</div>
+    <div><b>20 分</b>口說：對當日受眾講 60 秒並錄音（一 CxO・二 工程師・三 TAM・四 Demo・五 面試官）</div>
+    <div><b>20 分</b>緩衝：補昨天沒做完的，或讀外部書目指定章節</div>
+    <div><b>週六 3～4 時</b>週測 45 分 → 寫週作業</div>
+    <div><b>週日 1 時</b>週反思（校準分數、三個問題）→ 22:00 前交作業</div>
+  </div>
+  <div class="btns"><button id="export">匯出進度 JSON</button><button id="reset">清除進度</button></div>
+</div>
+<script>
+const WEEKS=[
+ {w:1,m:1,s:"11/16",e:"11/22",t:"GPU 本體：讀懂一張卡",q:"為什麼 AI 需要 GPU？一張規格表的每一欄在說什麼？",days:["GPU vs CPU、SIMT／warp／SM","記憶體層級、HBM vs GDDR、HBM 代際","A100→H100→B200/B300、Tensor Core 精度、MIG","規格表素養：單位、口徑、公式","情境整合與延遲金字塔"],a:"作業 1 GPU 規格表 one-pager",x:[]},
+ {w:2,m:1,s:"11/23",e:"11/29",t:"節點內互連與資料路徑",q:"八卡伺服器裡的資料怎麼走？瓶頸在哪一段？",days:["PCIe 基礎：代際、lane、編碼、拓撲","PCIe 層級、Switch vs Bridge、NUMA","NVLink／NVSwitch／SHARP、NVLink-C2C","GPUDirect P2P／RDMA／Storage、DMA","HGX 8-GPU 資料路徑走讀、CXL 一瞥"],a:"作業 2 HGX 資料路徑圖解",x:[]},
+ {w:3,m:1,s:"11/30",e:"12/06",t:"機架級系統與競品地圖",q:"Scale-up 機架為什麼成了新的計算單位？GPU／TPU／NPU 各自的甜蜜區？",days:["GB300 NVL72 規格與拓撲","延遲金字塔四層與估算公式","TPU 101：MXU／systolic／Pod／XLA","GPGPU vs NPU、AMX vs Tensor Core、Ascend 950","資料中心基礎 + 模組一複習"],a:"作業 3 競品定位一頁",x:["模組考 I 12/05","模擬面試 TMM 12/06"]},
+ {w:4,m:2,s:"12/07",e:"12/13",t:"GPU 運維、可觀測性與切分",q:"客戶說「GPU 利用率 100% 但很慢」，你怎麼回？",days:["nvidia-smi、device query、利用率迷思","DCGM 監控與健康檢查","驅動排障與故障模式","MIG／MPS／時間切片／用戶態攔截","資源管理；TAM 升級案例結構"],a:"作業 4 TAM 升級案例手冊",x:["週前測 12/07"]},
+ {w:5,m:2,s:"12/14",e:"12/20",t:"Scale-out 網路與集合通訊",q:"訓練集群為什麼佈 rail-optimized？IB 和 Ethernet 怎麼選？",days:["IB 架構與協定：RDMA、QP、擁塞控制","NCCL 理論：ring／tree、AllReduce 成本","NCCL 基準測試解讀與路徑","IB vs RoCE／Ethernet、Spectrum-X、UEC","GPU 排程：gang、拓撲感知"],a:"作業 5 IB vs Ethernet + CIO 建議",x:[]},
+ {w:6,m:2,s:"12/21",e:"12/27",t:"雲原生 AI 平台與 AI 儲存",q:"K8s 上的 GPU 怎麼切、怎麼排、怎麼餵資料？",days:["Container Toolkit 與 Device Plugin","Kueue + HAMi、GPU 共享排程、KAI","LWS 與 llm-d：多機推理","AI 儲存：JuiceFS、3FS、ICMS、GDS","參考架構整合 + 模組二複習"],a:"作業 6 企業 GPU 平台參考架構",x:["模組考 II 12/26","模擬面試 TAM 12/27"]},
+ {w:7,m:"r",s:"12/28",e:"01/03",t:"間隔複習週（假期輕量）",q:"模組一、二錯題清零；讀《Obviously Awesome》；自錄 5 分鐘 talk。",days:["模組一錯題重測","模組二錯題重測","累積測驗 1（12/30）","讀 G1 + 自錄 talk","Capstone 提案（1/1）"],a:"Capstone 提案一頁（1/3）",x:["累積測驗 2 01/02"]},
+ {w:8,m:3,s:"01/04",e:"01/10",t:"LLM 基礎與模型架構演進",q:"一個 70B 模型要幾張卡？為什麼 FP8／FP4 是硬體賣點？",days:["Transformer 與 attention、token","Embedding、位置編碼與 RoPE","Scaling laws、test-time scaling、架構演進","MoE 與量化","檔案格式、評測、幻覺；權重估算"],a:"作業 7 模型規格→硬體需求",x:["週前測 01/04"]},
+ {w:9,m:3,s:"01/11",e:"01/17",t:"訓練並行與推理引擎核心",q:"推理為什麼是記憶體頻寬問題？vLLM 到底做了什麼？",days:["DP／TP／PP／EP 與互連需求；SFT／RL","KV Cache 基礎與兩行公式","PagedAttention 與 prefix caching","Chunked prefill、spec decode、CUDA graph","PD 分離與 KV 傳輸"],a:"作業 8 推理引擎 talk 大綱 + 3 圖",x:[]},
+ {w:10,m:3,s:"01/18",e:"01/24",t:"推理經濟學與容量規劃",q:"每百萬 token 成本怎麼算？客戶該買幾張卡才划算？",days:["Token 經濟與四層槓桿","單位經濟與 API 定價","集群產能：Goodput 與 SLO","KV 容量規劃與 ROI、記憶體分層","B300 部署與 KV、HBF；TCO 組裝"],a:"作業 9 TCO／每 token 成本模型",x:["模組考 III 01/23","模擬面試 PMM 01/24"]},
+ {w:11,m:4,s:"01/25",e:"01/31",t:"RAG、Agent 與其對 infra 的影響",q:"Agent 工作負載怎麼改變推理基礎設施的需求？",days:["RAG 方案比較、分塊、embedding 選型","Agent：12-factor、ReAct、infra stack","Context engineering 與 MCP","Agent 工作負載對推理系統的影響","FDE 與 AI native；demo 腳本"],a:"作業 10 live demo 腳本 + 備案",x:["週前測 01/25"]},
+ {w:12,m:4,s:"02/01",e:"02/05",t:"GTM 整合衝刺",q:"同一個產品，30 秒／3 分鐘／30 分鐘三種長度你都能講嗎？",days:["定位五要素實作","訊息架構與三種長度","競品地圖與 MLPerf 讀法","期末綜合考（02/03）","模擬面試 panel（02/04）+ 投遞清單"],a:"期末作品集 2 件（02/02 交）",x:["期末綜合考 02/03","面試 panel 02/04"]}
+];
+const START=new Date(2026,10,16);const KEY="aiinfra-gtm-progress-v1";
+const ITEMS=["測驗","講義","口說"];
+let state={};try{state=JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){state={}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+function id(w,d,i){return `w${w}d${d}${i}`}
+function weekTotal(wk){return wk.days.length*ITEMS.length+2}
+function weekDone(wk){let n=0;wk.days.forEach((_,d)=>ITEMS.forEach(i=>{if(state[id(wk.w,d+1,i)])n++}));if(state[`w${wk.w}weekly`])n++;if(state[`w${wk.w}assign`])n++;return n}
+function curWeek(){const t=new Date();const diff=Math.floor((t-START)/86400000);return diff<0?0:Math.floor(diff/7)+1}
+function render(){
+  const g=document.getElementById("grid");g.innerHTML="";const cw=curWeek();let done=0,total=0;
+  WEEKS.forEach(wk=>{const d=weekDone(wk),t=weekTotal(wk);done+=d;total+=t;
+    const el=document.createElement("div");el.className="wk"+(wk.w===cw?" today":"");el.dataset.m=wk.m;
+    el.innerHTML=`<h3>W${wk.w}・${wk.t}</h3><div class="d">${wk.s} ～ ${wk.e}</div><div class="q">${wk.q}</div><div class="tags"><span class="tag">${wk.a}</span>${wk.x.map(x=>`<span class="tag exam">${x}</span>`).join("")}</div><div class="mini"><i style="width:${Math.round(d/t*100)}%"></i></div>`;
+    el.onclick=()=>showDetail(wk.w);g.appendChild(el)});
+  document.getElementById("pbar").style.width=Math.round(done/total*100)+"%";
+  document.getElementById("pdone").textContent=`完成 ${done} / ${total} 項（${Math.round(done/total*100)}%）`;
+  document.getElementById("ptoday").textContent=cw===0?"課程尚未開始（11/16 開課）":cw>12?"課程已結束，持續每日測驗四週":`今天在第 ${cw} 週`;
+}
+let openW=null;
+function showDetail(w){const wk=WEEKS[w-1];openW=w;const p=document.getElementById("detail");p.classList.remove("hidden");
+  const base=new Date(START);base.setDate(base.getDate()+(w-1)*7);
+  const rows=wk.days.map((t,i)=>{const dt=new Date(base);dt.setDate(base.getDate()+i);const ds=`${dt.getMonth()+1}/${dt.getDate()}`;
+    return `<tr><td>D${i+1} <span class="d">${ds}</span></td><td>${t}</td>${ITEMS.map(it=>`<td class="c"><label><input type="checkbox" data-k="${id(w,i+1,it)}" ${state[id(w,i+1,it)]?"checked":""}> ${it}</label></td>`).join("")}</tr>`}).join("");
+  p.innerHTML=`<h3 style="margin:0 0 4px">第 ${w} 週・${wk.t}</h3><div class="d" style="color:var(--muted);font-size:13px;margin-bottom:10px">${wk.q}</div>
+  <table><thead><tr><th>日</th><th>主題</th><th>日測</th><th>講義</th><th>口說</th></tr></thead><tbody>${rows}</tbody></table>
+  <div class="btns"><label><input type="checkbox" data-k="w${w}weekly" ${state[`w${w}weekly`]?"checked":""}> 週測完成</label><label><input type="checkbox" data-k="w${w}assign" ${state[`w${w}assign`]?"checked":""}> ${wk.a} 已交</label>${wk.x.map(x=>`<span class="tag exam">${x}</span>`).join("")}</div>
+  <div class="d" style="color:var(--muted);font-size:12px;margin-top:8px">講義：<code>handouts/w${String(w).padStart(2,"0")}/</code>・測驗：<code>quizzes/week${String(w).padStart(2,"0")}/</code></div>`;
+  p.querySelectorAll("input[type=checkbox]").forEach(cb=>cb.onchange=e=>{state[e.target.dataset.k]=e.target.checked;if(!e.target.checked)delete state[e.target.dataset.k];save();render()});
+  p.scrollIntoView({behavior:"smooth",block:"nearest"});
+}
+document.getElementById("export").onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="study-progress.json";a.click()};
+document.getElementById("reset").onclick=()=>{if(confirm("清除所有勾選？")){state={};save();render();if(openW)showDetail(openW)}};
+render();const cw0=curWeek();if(cw0>=1&&cw0<=12)showDetail(cw0);
+</script>
+</body>
+</html>

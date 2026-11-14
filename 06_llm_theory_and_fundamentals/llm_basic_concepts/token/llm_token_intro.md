@@ -1,35 +1,35 @@
 # 解密 LLM 中的 Tokens
 
-在大语言模型（LLM）中，“**tokens**”（令牌）是理解和生成语言的最小单位。无论是输入文本的处理，还是模型输出的生成，`tokens` 都在其中扮演核心角色。本文将详细解析 `token` 的概念、如何估算其数量，并提供具体的 `Python` 示例，帮助开发者更好地理解和调用大语言模型。
+在大語言模型（LLM）中，“**tokens**”（令牌）是理解和生成語言的最小單位。無論是輸入文字的處理，還是模型輸出的生成，`tokens` 都在其中扮演核心角色。本文將詳細解析 `token` 的概念、如何估算其數量，並提供具體的 `Python` 示例，幫助開發者更好地理解和呼叫大語言模型。
 
-## 什么是 Token？
+## 什麼是 Token？
 
-在 LLM 中，`token` 是模型处理的基本单元。Tokens 通常不是单个字母或字符，而是更具语义的单位（如单词、子词或字符），具体取决于分词方法。例如：
+在 LLM 中，`token` 是模型處理的基本單元。Tokens 通常不是單個字母或字元，而是更具語義的單位（如單詞、子詞或字元），具體取決於分詞方法。例如：
 
-- **单词**：英文中的 "`dog`" 或 "`computer`"。
-- **子词**：通过分词方法拆分的单位，如 "`un-`" 和 "`-able`"。
+- **單詞**：英文中的 "`dog`" 或 "`computer`"。
+- **子詞**：透過分詞方法拆分的單位，如 "`un-`" 和 "`-able`"。
 - **字符**：如 "`h`", "`e`", "`l`", "`l`", "`o`"。
-- **标点符号**：句号“。”、逗号“，”等也会被视作独立 `tokens`。
+- **標點符號**：句號“。”、逗號“，”等也會被視作獨立 `tokens`。
 
-这些 `tokens` 被转换为嵌入向量，供模型理解和生成文本。
+這些 `tokens` 被轉換為嵌入向量，供模型理解和生成文本。
 
-## Tokens 如何影响模型的输入和输出
+## Tokens 如何影響模型的輸入和輸出
 
-大多数 `LLM`（如 `GPT` 系列）通过 `token`s 对文本编码。每个 `token` 对应一个嵌入向量，模型据此预测后续内容。`Token` 数量直接影响模型的性能、计算负载及调用成本。
+大多數 `LLM`（如 `GPT` 系列）透過 `token`s 對文字編碼。每個 `token` 對應一個嵌入向量，模型據此預測後續內容。`Token` 數量直接影響模型的效能、計算負載及呼叫成本。
 
-例如，`GPT-3` 的最大上下文长度为 **2,048 tokens**，若输入超出限制则需截断或拆分。而当前主流模型的上下文窗口已普遍达到 **128K tokens**，部分长上下文模型甚至支持 **1M tokens**，但按 token 计费与截断的逻辑并未改变。
+例如，`GPT-3` 的最大上下文長度為 **2,048 tokens**，若輸入超出限制則需截斷或拆分。而當前主流模型的上下文視窗已普遍達到 **128K tokens**，部分長上下文模型甚至支援 **1M tokens**，但按 token 計費與截斷的邏輯並未改變。
 
-## 如何估算 Tokens 数量
+## 如何估算 Tokens 數量
 
-调用 `LLM API` 前估算 `token` 数量至关重要，以下是常用方法：
+呼叫 `LLM API` 前估算 `token` 數量至關重要，以下是常用方法：
 
 ---
 
-### 使用 `tiktoken` 估算（适用于 OpenAI GPT 模型）
+### 使用 `tiktoken` 估算（適用於 OpenAI GPT 模型）
 
-`tiktoken` 是 `OpenAI` 官方库，专为 `GPT` 系列设计。
+`tiktoken` 是 `OpenAI` 官方庫，專為 `GPT` 系列設計。
 
-**安装**：
+**安裝**：
 
 ```bash
 pip install tiktoken
@@ -40,20 +40,20 @@ pip install tiktoken
 ```python
 import tiktoken
 
-encoder = tiktoken.get_encoding("cl100k_base")  # 指定 cl100k_base 的分词器
+encoder = tiktoken.get_encoding("cl100k_base")  # 指定 cl100k_base 的分詞器
 text = "What is the capital of China?"
 tokens = encoder.encode(text)
 
-print(f"Token 数量: {len(tokens)}")  # 输出: 7
+print(f"Token 數量: {len(tokens)}")  # 輸出: 7
 ```
 
 ---
 
-### 使用 `transformers` 估算中文 Tokens（更灵活）
+### 使用 `transformers` 估算中文 Tokens（更靈活）
 
-`transformers` 提供多语言支持，适合中文文本。
+`transformers` 提供多語言支援，適合中文文字。
 
-**安装**：
+**安裝**：
 
 ```bash
 pip install transformers
@@ -64,63 +64,63 @@ pip install transformers
 ```python
 from transformers import BertTokenizer
 
-tokenizer = BertTokenizer.from_pretrained("bert-base-chinese")  # 加载中文分词器
-text = "《哪吒之魔童闹海》于2025年1月29日上映，讲述了哪吒在成长过程中，面对重重困难，不断挑战自我，最终逆天改命的故事。影片融合了精彩的特效和深刻的情感，展现了哪吒的勇敢与坚韧。"
+tokenizer = BertTokenizer.from_pretrained("bert-base-chinese")  # 載入中文分詞器
+text = "《哪吒之魔童鬧海》於2025年1月29日上映，講述了哪吒在成長過程中，面對重重困難，不斷挑戰自我，最終逆天改命的故事。影片融合了精彩的特效和深刻的情感，展現了哪吒的勇敢與堅韌。"
 tokens = tokenizer.encode(text, add_special_tokens=False)  # 去掉特殊字符
 
-print(f"Token 数量: {len(tokens)}")  # 输出: 84（实测值：汉字逐字切分，
-# 但数字串如 "2025"、"29" 在词表中整体成词，故略少于全文 88 个字符；具体计数以实测为准）
+print(f"Token 數量: {len(tokens)}")  # 輸出: 84（實測值：漢字逐字切分，
+# 但數字串如 "2025"、"29" 在詞表中整體成詞，故略少於全文 88 個字元；具體計數以實測為準）
 ```
 
 ---
 
-### 使用 `tiktoken` 处理中文的注意事项
+### 使用 `tiktoken` 處理中文的注意事項
 
-尽管 `tiktoken` 主要面向英文，其基于 BPE（字节对编码）的算法也可处理中文，但可能产生更多子词 `tokens`：
+儘管 `tiktoken` 主要面向英文，其基於 BPE（位元組對編碼）的演算法也可處理中文，但可能產生更多子詞 `tokens`：
 
 ```python
 import tiktoken
 
 encoder = tiktoken.get_encoding("cl100k_base")
-text = "《哪吒之魔童闹海》于2025年1月29日上映，讲述了哪吒在成长过程中，面对重重困难，不断挑战自我，最终逆天改命的故事。影片融合了精彩的特效和深刻的情感，展现了哪吒的勇敢与坚韧。"
+text = "《哪吒之魔童鬧海》於2025年1月29日上映，講述了哪吒在成長過程中，面對重重困難，不斷挑戰自我，最終逆天改命的故事。影片融合了精彩的特效和深刻的情感，展現了哪吒的勇敢與堅韌。"
 tokens = encoder.encode(text)
 
-print(f"Token 数量: {len(tokens)}")  # 输出: 115
+print(f"Token 數量: {len(tokens)}")  # 輸出: 115
 ```
 
-**结果差异说明**  
-`tiktoken` 的 BPE 算法会将中文拆分为更细粒度的子词（如字节级单字或常见组合），而 `transformers` 的 `BertTokenizer`（bert-base-chinese）对中文按单字切分、粒度最细，保留的完整词最少（仅 ASCII 数字串等会按词表合并，如 "2025" 整体成一个 token），因此两者计数不同。
+**結果差異說明**  
+`tiktoken` 的 BPE 演算法會將中文拆分為更細粒度的子詞（如位元組級單字或常見組合），而 `transformers` 的 `BertTokenizer`（bert-base-chinese）對中文按單字切分、粒度最細，保留的完整詞最少（僅 ASCII 數字串等會按詞表合併，如 "2025" 整體成一個 token），因此兩者計數不同。
 
 ---
 
-## 完整代码
+## 完整程式碼
 
 ### **Dockerfile**
 
 ```Dockerfile
-# 使用官方 Python 3.9 镜像
+# 使用官方 Python 3.9 映象
 FROM python:3.9-slim
 
-# 设置工作目录
+# 設定工作目錄
 WORKDIR /app
 
-# 复制当前目录下的所有文件到容器的工作目录
+# 複製當前目錄下的所有檔案到容器的工作目錄
 COPY token_estimation.py .
 
 RUN mkdir -p /app/models
 
-# 使用阿里云镜像源安装依赖（确保 URL 是有效的）
+# 使用阿里雲映象源安裝依賴（確保 URL 是有效的）
 RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --upgrade pip && \
     pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ tiktoken transformers hf_transfer
 
-# 设置环境变量
+# 設定環境變數
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME="/app/models"
 #ENV HF_ENDPOINT="https://mirroring.huggingface.co"
 ENV HF_HUB_ENABLE_HF_TRANSFER=1
 
-# 运行主程序
+# 執行主程式
 CMD ["python", "token_estimation.py"]
 ```
 
@@ -131,9 +131,9 @@ import tiktoken
 from transformers import BertTokenizer
 import argparse
 
-def estimate_tokens_tiktoken(text, model="cl100k_base"):  # 修改模型名称
+def estimate_tokens_tiktoken(text, model="cl100k_base"):  # 修改模型名稱
     """
-    使用 tiktoken 估算 Tokens 数量
+    使用 tiktoken 估算 Tokens 數量
     """
     try:
         encoder = tiktoken.get_encoding(model)
@@ -146,7 +146,7 @@ def estimate_tokens_tiktoken(text, model="cl100k_base"):  # 修改模型名称
 
 def estimate_tokens_transformers(text):
     """
-    使用 transformers 估算中文 Tokens 数量
+    使用 transformers 估算中文 Tokens 數量
     """
     try:
         tokenizer = BertTokenizer.from_pretrained("bert-base-chinese")
@@ -158,25 +158,25 @@ def estimate_tokens_transformers(text):
 
 def main():
     english_text = "What is the capital of China?"
-    chinese_text = "《哪吒之魔童闹海》于2025年1月29日上映，讲述了哪吒在成长过程中，面对重重困难，不断挑战自我，最终逆天改命的故事。影片融合了精彩的特效和深刻的情感，展现了哪吒的勇敢与坚韧。"
+    chinese_text = "《哪吒之魔童鬧海》於2025年1月29日上映，講述了哪吒在成長過程中，面對重重困難，不斷挑戰自我，最終逆天改命的故事。影片融合了精彩的特效和深刻的情感，展現了哪吒的勇敢與堅韌。"
 
     print("\n--- 英文 Tokens 估算 ---")
-    print(f"输入文本: {english_text}")
+    print(f"輸入文字: {english_text}")
     tiktoken_eng = estimate_tokens_tiktoken(english_text)
-    print(f"Tokens 数量（tiktoken）: {tiktoken_eng}")
+    print(f"Tokens 數量（tiktoken）: {tiktoken_eng}")
 
     print("\n--- 中文 Tokens 估算 ---")
-    print(f"输入文本: {chinese_text}")
+    print(f"輸入文字: {chinese_text}")
     transformers_chinese = estimate_tokens_transformers(chinese_text)
-    print(f"Tokens 数量（transformers）: {transformers_chinese}")
+    print(f"Tokens 數量（transformers）: {transformers_chinese}")
     tiktoken_chinese = estimate_tokens_tiktoken(chinese_text)
-    print(f"Tokens 数量（tiktoken）: {tiktoken_chinese}")
+    print(f"Tokens 數量（tiktoken）: {tiktoken_chinese}")
 
 if __name__ == "__main__":
     main()
 ```
 
-### 构建及执行
+### 構建及執行
 
 ```bash
 docker build --network=host -t token_estimation .
@@ -185,20 +185,20 @@ docker run --rm --network=host token_estimation
 None of PyTorch, TensorFlow >= 2.0, or Flax have been found. Models won't be available and only tokenizers, configuration and file/data utilities can be used.
 
 --- 英文 Tokens 估算 ---
-输入文本: What is the capital of China?
-Tokens 数量（tiktoken）: 7
+輸入文字: What is the capital of China?
+Tokens 數量（tiktoken）: 7
 
 --- 中文 Tokens 估算 ---
-输入文本: 《哪吒之魔童闹海》于2025年1月29日上映，讲述了哪吒在成长过程中，面对重重困难，不断挑战自我，最终逆天改命的故事。影片融合了精彩的特效和深刻的情感，展现了哪吒的勇敢与坚韧。
-Tokens 数量（transformers）: 84
-Tokens 数量（tiktoken）: 115
+輸入文字: 《哪吒之魔童鬧海》於2025年1月29日上映，講述了哪吒在成長過程中，面對重重困難，不斷挑戰自我，最終逆天改命的故事。影片融合了精彩的特效和深刻的情感，展現了哪吒的勇敢與堅韌。
+Tokens 數量（transformers）: 84
+Tokens 數量（tiktoken）: 115
 ```
 
-## 总结
+## 總結
 
-- `Token` 是 `LLM` 处理文本的基本单位，直接影响计算资源和成本。
-- **英文文本**：推荐使用 `tiktoken`，因其与 `GPT` 系列的分词策略一致。
-- **中文文本**：`transformers` 的分词器更贴近词语划分，而 `tiktoken` 可能生成更多子词 `tokens`。
-- 理解不同工具的分词逻辑，可帮助优化文本输入，避免超出模型限制。
+- `Token` 是 `LLM` 處理文字的基本單位，直接影響計算資源和成本。
+- **英文文本**：推薦使用 `tiktoken`，因其與 `GPT` 系列的分詞策略一致。
+- **中文文本**：`transformers` 的分詞器更貼近詞語劃分，而 `tiktoken` 可能生成更多子詞 `tokens`。
+- 理解不同工具的分詞邏輯，可幫助最佳化文字輸入，避免超出模型限制。
 
 ---

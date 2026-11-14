@@ -1,80 +1,80 @@
-# KV Cache 八讲 — 课程总纲
+# KV Cache 八講 — 課程總綱
 
 ## 基本信息
 
-| 项目        | 内容                                                                                         |
+| 專案        | 內容                                                                                         |
 | ----------- | -------------------------------------------------------------------------------------------- |
-| 课程名称    | KV Cache 八讲：从 token 账本到生产引擎                                                       |
-| 课时        | 8 讲 × 120 分钟                                                                              |
-| 授课对象    | 有 Python / PyTorch 基础、了解 Transformer 基本结构的工程师                                  |
-| 先修        | 矩阵乘法、注意力机制、PyTorch 基础；建议先完成 `ai-infra-course` 模块 5/6；不要求 CUDA / K8s |
-| 第 4 讲前置 | 了解 vLLM 的基本请求流程和 PagedAttention 概念；没有用过 vLLM 也能听，但需要课前补模块 5     |
-| 主线        | token 账 → page/slot 口径 → request/state 账 → 引擎与容量                                    |
+| 課程名稱    | KV Cache 八講：從 token 賬本到生產引擎                                                       |
+| 課時        | 8 講 × 120 分钟                                                                              |
+| 授課物件    | 有 Python / PyTorch 基礎、了解 Transformer 基本結構的工程師                                  |
+| 先修        | 矩陣乘法、注意力機制、PyTorch 基礎；建議先完成 `ai-infra-course` 模組 5/6；不要求 CUDA / K8s |
+| 第 4 講前置 | 了解 vLLM 的基本請求流程和 PagedAttention 概念；沒有用過 vLLM 也能聽，但需要課前補模組 5     |
+| 主線        | token 賬 → page/slot 口徑 → request/state 賬 → 引擎與容量                                    |
 
-## 教学目标
+## 教學目標
 
-- **知识目标**：掌握 KV Cache 的形状、分页、复用、分层与混合注意力下的状态分类。
-- **能力目标**：能读 nano-vllm / vLLM / SGLang 的 KV 路径，能算 token 池账与 request state 池账。
-- **素养目标**：每个容量数字都带“模型变体 + 精度 + 统计范围”，不把不同代际、不同并行方式的数字混在一起。
+- **知識目標**：掌握 KV Cache 的形狀、分頁、複用、分層與混合注意力下的狀態分類。
+- **能力目標**：能讀 nano-vllm / vLLM / SGLang 的 KV 路徑，能算 token 池賬與 request state 池賬。
+- **素養目標**：每個容量數字都帶“模型變體 + 精度 + 統計範圍”，不把不同代際、不同並行方式的數字混在一起。
 
-## 课程边界
+## 課程邊界
 
-| 内容                                      | 放在哪里                                           |
+| 內容                                      | 放在哪里                                           |
 | ----------------------------------------- | -------------------------------------------------- |
-| Transformer、QKV、prefill/decode 入门     | 第 1 讲快速建立；细节参考 `ai-infra-course` 模块 5 |
-| vLLM 部署、benchmark、基础 PagedAttention | 前置材料；第 4 讲只读 KV 生命周期源码              |
-| LMCache、Mooncake、量化、安全             | 不铺开；第 5 讲解 L3 时提及 Mooncake/HF3FS，LMCache 作为课后延伸 |
-| GLM-5.3-Flash / DeepSeek-V4.1-Flash       | 第 6、7 讲，只读 KV 相关代码与配置                 |
+| Transformer、QKV、prefill/decode 入門     | 第 1 講快速建立；細節參考 `ai-infra-course` 模組 5 |
+| vLLM 部署、benchmark、基礎 PagedAttention | 前置材料；第 4 講只讀 KV 生命週期原始碼              |
+| LMCache、Mooncake、量化、安全             | 不鋪開；第 5 講解 L3 時提及 Mooncake/HF3FS，LMCache 作為課後延伸 |
+| GLM-5.3-Flash / DeepSeek-V4.1-Flash       | 第 6、7 講，只讀 KV 相關程式碼與配置                 |
 
-## 八讲安排
+## 八講安排
 
-第 1–2 讲采用 **30 min 概念 + 45 min 源码/演示 + 35 min 实验 + 10 min 答疑**；第 3–4 讲采用 **30 min 概念 + 50 min 源码/演示 + 30 min 实验 + 10 min 答疑**；第 5–8 讲采用 **30 min 概念 + 40 min 源码/演示 + 40 min 实验 + 10 min 答疑**，源码锚点要求课前预读。各讲的详细时间表、重点难点和参考材料放在对应章节的 `syllabus.md`。
+第 1–2 講採用 **30 min 概念 + 45 min 原始碼/演示 + 35 min 實驗 + 10 min 答疑**；第 3–4 講採用 **30 min 概念 + 50 min 原始碼/演示 + 30 min 實驗 + 10 min 答疑**；第 5–8 講採用 **30 min 概念 + 40 min 原始碼/演示 + 40 min 實驗 + 10 min 答疑**，原始碼錨點要求課前預讀。各講的詳細時間表、重點難點和參考材料放在對應章節的 `syllabus.md`。
 
-| #   | 主题                                       | 核心问题                                                                    | 章节教学大纲                                                                 |
+| #   | 主題                                       | 核心問題                                                                    | 章節教學大綱                                                                 |
 | --- | ------------------------------------------ | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| 1   | KV Cache 为什么存在                        | decode 为什么必须缓存 K/V，一个 token 的账怎么算                            | [01-kv-cache-basics/syllabus.md](01-kv-cache-basics/syllabus.md)             |
-| 2   | KV Cache 怎么放                            | token slot、block、page、block table 怎么对应                               | [02-kv-cache-layout/syllabus.md](02-kv-cache-layout/syllabus.md)             |
-| 3   | KV Cache 在 nano-vllm 里怎么实现           | block manager、前缀哈希、ref_count、preempt/swap 怎么串起来                 | [03-nanovllm-kv-cache/syllabus.md](03-nanovllm-kv-cache/syllabus.md)         |
-| 4   | KV Cache 在 vLLM 里怎么调度与回收          | `KVCacheManager`、`BlockPool`、前缀缓存与 nano-vllm 差在哪                  | [04-vllm-kv-cache/syllabus.md](04-vllm-kv-cache/syllabus.md)                 |
-| 5   | KV Cache 怎么复用与分层                    | radix tree 怎么命中，HiCache 什么时候换出到 DRAM                            | [05-kv-cache-reuse/syllabus.md](05-kv-cache-reuse/syllabus.md)               |
-| 6   | KV Cache 在 GLM-5.3-Flash 里怎么变成三本账 | 45 层文本层里 34 层 KDA + 11 层 full，token KV、indexer、KDA state 各怎么存 | [06-glm53-flash-kv-cache/syllabus.md](06-glm53-flash-kv-cache/syllabus.md)   |
-| 7   | KV Cache 在 DeepSeek-V4.1-Flash 里怎么压缩 | 890 B/token 的 global KV 和 SWA KV 怎么分工                                 | [07-deepseek-v41-kv-cache/syllabus.md](07-deepseek-v41-kv-cache/syllabus.md) |
-| 8   | KV Cache 怎么算容量、怎么选引擎            | token 池账、request state 池账与 page/slot 口径怎么一起算                   | [08-kv-capacity-planning/syllabus.md](08-kv-capacity-planning/syllabus.md)   |
+| 1   | KV Cache 為什麼存在                        | decode 為什麼必須快取 K/V，一個 token 的賬怎麼算                            | [01-kv-cache-basics/syllabus.md](01-kv-cache-basics/syllabus.md)             |
+| 2   | KV Cache 怎麼放                            | token slot、block、page、block table 怎麼對應                               | [02-kv-cache-layout/syllabus.md](02-kv-cache-layout/syllabus.md)             |
+| 3   | KV Cache 在 nano-vllm 裡怎麼實現           | block manager、字首雜湊、ref_count、preempt/swap 怎麼串起來                 | [03-nanovllm-kv-cache/syllabus.md](03-nanovllm-kv-cache/syllabus.md)         |
+| 4   | KV Cache 在 vLLM 裡怎麼排程與回收          | `KVCacheManager`、`BlockPool`、字首快取與 nano-vllm 差在哪                  | [04-vllm-kv-cache/syllabus.md](04-vllm-kv-cache/syllabus.md)                 |
+| 5   | KV Cache 怎麼複用與分層                    | radix tree 怎麼命中，HiCache 什麼時候換出到 DRAM                            | [05-kv-cache-reuse/syllabus.md](05-kv-cache-reuse/syllabus.md)               |
+| 6   | KV Cache 在 GLM-5.3-Flash 裡怎麼變成三本賬 | 45 層文字層裡 34 層 KDA + 11 層 full，token KV、indexer、KDA state 各怎麼存 | [06-glm53-flash-kv-cache/syllabus.md](06-glm53-flash-kv-cache/syllabus.md)   |
+| 7   | KV Cache 在 DeepSeek-V4.1-Flash 裡怎麼壓縮 | 890 B/token 的 global KV 和 SWA KV 怎麼分工                                 | [07-deepseek-v41-kv-cache/syllabus.md](07-deepseek-v41-kv-cache/syllabus.md) |
+| 8   | KV Cache 怎麼算容量、怎麼選引擎            | token 池賬、request state 池賬與 page/slot 口徑怎麼一起算                   | [08-kv-capacity-planning/syllabus.md](08-kv-capacity-planning/syllabus.md)   |
 
-## 学习产出与支撑章节
+## 學習產出與支撐章節
 
-| 产出                                     | 支撑章节         | 验收物                                   |
+| 產出                                     | 支撐章節         | 驗收物                                   |
 | ---------------------------------------- | ---------------- | ---------------------------------------- |
-| token 池账（每 token KV + indexer）      | 第 1、2、6、7 讲 | 一张带模型、精度、序列长度和并发的容量表 |
-| request state 池账（KDA state / SWA KV） | 第 6、7、8 讲    | 按 request 或 state slot 计的容量表      |
-| page/slot 对齐与碎片                     | 第 2、3、4、8 讲 | 一个请求的 block table 与内部碎片计算    |
-| 引擎映射与选型                           | 第 3–8 讲        | nano-vllm / vLLM / SGLang 的类与参数对照 |
-| Agent 长会话规划                         | 第 8 讲          | 一页容量规划 + 一页选型理由              |
+| token 池賬（每 token KV + indexer）      | 第 1、2、6、7 講 | 一張帶模型、精度、序列長度和併發的容量表 |
+| request state 池賬（KDA state / SWA KV） | 第 6、7、8 講    | 按 request 或 state slot 計的容量表      |
+| page/slot 對齊與碎片                     | 第 2、3、4、8 講 | 一個請求的 block table 與內部碎片計算    |
+| 引擎對映與選型                           | 第 3–8 講        | nano-vllm / vLLM / SGLang 的類與參數對照 |
+| Agent 長會話規劃                         | 第 8 講          | 一頁容量規劃 + 一頁選型理由              |
 
-## 作业地图
+## 作業地圖
 
-| 编号   | 落点    | 内容                                                         | 计入                    |
+| 編號   | 落點    | 內容                                                         | 計入                    |
 | ------ | ------- | ------------------------------------------------------------ | ----------------------- |
-| 作业 1 | 第 1 讲 | 通用 KV 估算器（Qwen3-0.6B / Qwen2.5-7B，MHA/GQA，FP16/FP8） | 源码笔记 30% 的基础部分 |
-| 作业 2 | 第 3 讲 | 给 nano-vllm 加 KV 观察点或简单驱逐策略                      | 源码笔记 30% 的源码部分 |
-| 作业 3 | 第 8 讲 | Agent 长会话容量规划与引擎选型                               | 结课作业 40%            |
+| 作業 1 | 第 1 講 | 通用 KV 估算器（Qwen3-0.6B / Qwen2.5-7B，MHA/GQA，FP16/FP8） | 原始碼筆記 30% 的基礎部分 |
+| 作業 2 | 第 3 講 | 給 nano-vllm 加 KV 觀察點或簡單驅逐策略                      | 原始碼筆記 30% 的原始碼部分 |
+| 作業 3 | 第 8 講 | Agent 長會話容量規劃與引擎選型                               | 結課作業 40%            |
 
-## 考核建议
+## 考核建議
 
-| 项目     | 权重 | 形式                                                       |
+| 專案     | 權重 | 形式                                                       |
 | -------- | ---- | ---------------------------------------------------------- |
-| 课堂实验 | 30%  | 每讲一个短实验，提交截图、脚本输出或结论                   |
-| 源码笔记 | 30%  | 作业 1 + 作业 2；选一条 KV 路径，写清类、池、树节点和参数  |
-| 结课作业 | 40%  | 作业 3：Agent 负载的容量规划与引擎选型；一页决策备忘为必做 |
+| 課堂實驗 | 30%  | 每講一個短實驗，提交截圖、指令碼輸出或結論                   |
+| 原始碼筆記 | 30%  | 作業 1 + 作業 2；選一條 KV 路徑，寫清類、池、樹節點和參數  |
+| 結課作業 | 40%  | 作業 3：Agent 負載的容量規劃與引擎選型；一頁決策備忘為必做 |
 
-## 课程资料
+## 課程資料
 
-- [课程 README](README.md)
-- [共用实验环境](lab-environment.md)
-- [术语表](glossary.md)
-- [AI-fundamentals KV Cache 技术体系](../../09_inference_system/kv_cache/README.md)
+- [課程 README](README.md)
+- [共用實驗環境](lab-environment.md)
+- [術語表](glossary.md)
+- [AI-fundamentals KV Cache 技術體系](../../09_inference_system/kv_cache/README.md)
 - [GLM-5.3-Flash KV 布局](../../09_inference_system/sglang/glm53-flash-kv-layout.md)
-- [DeepSeek-V4.1-Flash 精读](../../09_inference_system/kv_cache/07_kv_compression/06-deepseek-v41-flash.md)
+- [DeepSeek-V4.1-Flash 精讀](../../09_inference_system/kv_cache/07_kv_compression/06-deepseek-v41-flash.md)
 - [nano-vllm](https://github.com/ForceInjection/nano-vllm)
 - [vLLM DeepSeek-V4.1-Flash](https://vllm-project.github.io/2026/10/07/deepseek-v41-flash.html)
 - [SGLang GLM-5.3-Flash cookbook](https://github.com/sgl-project/sglang/blob/0bcd822377da7b5718e674eaf9c870d349424dd1/docs/cookbook/autoregressive/GLM/GLM-5.3-Flash.mdx)

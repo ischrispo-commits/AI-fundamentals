@@ -1,176 +1,176 @@
-# 从芯片到 Agent：AI 基础设施的阅读地图 ——「AI 原力注入」好书推荐合集
+# 從晶片到 Agent：AI 基礎設施的閱讀地圖 ——「AI 原力注入」好書推薦合集
 
-> **元信息**：整理于 2026-08 | 素材来自公众号「AI 原力注入」好书推荐专辑（2023-11 至今 49 篇）| 章节体系对应 [AI Fundamentals](https://github.com/ForceInjection/AI-fundamentals) 知识仓库
+> **元信息**：整理於 2026-08 | 素材來自公眾號「AI 原力注入」好書推薦專輯（2023-11 至今 49 篇）| 章節體系對應 [AI Fundamentals](https://github.com/ForceInjection/AI-fundamentals) 知識倉庫
 
-## 引子：为什么需要一份「按层组织」的书单
+## 引子：為什麼需要一份「按層組織」的書單
 
-AI 基础设施是一条从硅片到智能体的长链路：GPU 芯片设计、PCIe/NVLink 互连、集群网络与运维、云原生调度、CUDA 编程、大模型训练、推理引擎、Agent 工程、RAG 检索……任何一个环节的知识缺口，都会在真正的生产实践中暴露。
+AI 基礎設施是一條從矽片到智能體的長鏈路：GPU 晶片設計、PCIe/NVLink 互連、叢集網路與運維、雲原生排程、CUDA 程式設計、大模型訓練、推理引擎、Agent 工程、RAG 檢索……任何一個環節的知識缺口，都會在真正的生產實踐中暴露。
 
-过去两年多，我们公众号陆续推荐了四十余本好书，覆盖了这条链路上的绝大多数环节。但单篇推荐解决的是「某本书值不值得读」，解决不了「按什么顺序读」。这篇合集把推荐过的书重新按**技术栈层级**组织成一张阅读地图——每一层推荐的书，就是进入该层的第一块敲门砖。章节顺序与 [AI Fundamentals](https://github.com/ForceInjection/AI-fundamentals) 仓库目录一一对应（硬件 → 互连 → 集群 → 云原生 → 编程 → 应用 → 理论 → 训练 → 推理 → 智能体 → 检索 → 学习路径 → 新范式），从底层到上层递进；不按线性阅读的读者可直接跳到文末的「阅读路径建议」按目标裁剪。
+過去兩年多，我們公眾號陸續推薦了四十餘本好書，覆蓋了這條鏈路上的絕大多數環節。但單篇推薦解決的是「某本書值不值得讀」，解決不了「按什麼順序讀」。這篇合集把推薦過的書重新按**技術棧層級**組織成一張閱讀地圖——每一層推薦的書，就是進入該層的第一塊敲門磚。章節順序與 [AI Fundamentals](https://github.com/ForceInjection/AI-fundamentals) 倉庫目錄一一對應（硬件 → 互連 → 叢集 → 云原生 → 程式設計 → 應用 → 理論 → 訓練 → 推理 → 智能體 → 檢索 → 學習路徑 → 新范式），從底層到上層遞進；不按線性閱讀的讀者可直接跳到文末的「閱讀路徑建議」按目標裁剪。
 
-选书标准有三条：**中文优先**（无中文版的经典单独注明）；**理论与实战搭配**（每一层至少保留一本「原理书」和一本「动手书」，书目不足的层以开源资源补位）；**经典与新书并重**（基础层用时间检验过的经典，前沿层用 2025-2026 年的新书）。
+選書標準有三條：**中文優先**（無中文版的經典單獨註明）；**理論與實戰搭配**（每一層至少保留一本「原理書」和一本「動手書」，書目不足的層以開源資源補位）；**經典與新書並重**（基礎層用時間檢驗過的經典，前沿層用 2025-2026 年的新書）。
 
 ---
 
-## 一、硬件架构与互连技术
+## 一、硬體架構與互連技術
 
-算力从哪来？答案是芯片。这一层决定的是「天花板」：SM 结构、Tensor Core、HBM 带宽、PCIe/NVLink 拓扑，直接决定上层软件能榨出多少性能。该层中文新书稀缺，推荐一本经受住时间检验的经典。
+算力從哪來？答案是芯片。這一層決定的是「天花板」：SM 結構、Tensor Core、HBM 頻寬、PCIe/NVLink 拓撲，直接決定上層軟體能榨出多少效能。該層中文新書稀缺，推薦一本經受住時間檢驗的經典。
 
-**《计算机体系结构：量化研究方法》（Hennessy & Patterson，机械工业出版社）**〔深度〕——计算机体系结构领域的经典之作，沉淀的量化分析方法论至今仍是评估任何新硬件（GPU、NPU、CXL 设备）的思维框架。适合想真正读懂硬件规格表、而不只是背参数的系统工程师。
+**《計算機體系結構：量化研究方法》（Hennessy & Patterson，機械工業出版社）**〔深度〕——計算機體系結構領域的經典之作，沉澱的量化分析方法論至今仍是評估任何新硬體（GPU、NPU、CXL 裝置）的思維框架。適合想真正讀懂硬體規格表、而不只是背參數的系統工程師。
 
-> 该层技术迭代极快（NVLink 一年一代、CXL 3.0 Fabric），纸质书跟不上硬件节奏，体系化课程见第十二章 ZOMI 酱 AISystem，2026 年视角可配合 AI Fundamentals 仓库的[硬件架构章节](https://github.com/ForceInjection/AI-fundamentals)。
+> 該層技術迭代極快（NVLink 一年一代、CXL 3.0 Fabric），紙質書跟不上硬體節奏，體系化課程見第十二章 ZOMI 醬 AISystem，2026 年視角可配合 AI Fundamentals 倉庫的[硬體架構章節](https://github.com/ForceInjection/AI-fundamentals)。
 
-## 二、AI 集群运维与高性能通信
+## 二、AI 叢集運維與高效能通訊
 
-单卡算力再高，跑大模型也要组网。这一层解决的是「机器买回来之后怎么稳住」：GPU 状态监控、网络健康、性能观测。中文世界该层好书同样稀少，以下三本分别从网络内核、系统性能和边缘部署三个侧面补位。
+單卡算力再高，跑大模型也要組網。這一層解決的是「機器買回來之後怎麼穩住」：GPU 狀態監控、網路健康、效能觀測。中文世界該層好書同樣稀少，以下三本分別從網路核心、系統效能和邊緣部署三個側面補位。
 
-**《深入理解 Linux 网络》（张彦飞，电子工业出版社）**〔进阶〕——从「网络包如何被接收和发送、阻塞在内部如何发生、epoll 的底层工作原理、TCP 连接底层如何支持」等开发运维高频问题切入，逐层拆解网络底层实现，带读者「修炼底层内功」、看清问题核心与背后的技术本质；全书是连接建立与收发包流程的概览总结，贴近实战。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247486151&idx=1&sn=efadd6984666d7b5dbe17f849dda12a1&chksm=e995c88adee2419c41d5ddac4b88b65d88285cf04c7ecdcd1ca4698ef9aff343275eb69ada41)〕
+**《深入理解 Linux 網路》（張彥飛，電子工業出版社）**〔進階〕——從「網路包如何被接收和傳送、阻塞在內部如何發生、epoll 的底層工作原理、TCP 連線底層如何支援」等開發運維高頻問題切入，逐層拆解網路底層實現，帶讀者「修煉底層內功」、看清問題核心與背後的技術本質；全書是連線建立與收發包流程的概覽總結，貼近實戰。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247486151&idx=1&sn=efadd6984666d7b5dbe17f849dda12a1&chksm=e995c88adee2419c41d5ddac4b88b65d88285cf04c7ecdcd1ca4698ef9aff343275eb69ada41)〕
 
-**《BPF 之巅：洞悉 Linux 系统和应用性能》（Brendan Gregg，电子工业出版社）**〔深度〕——继《性能之巅》之后，本书为读者「打开 Linux 内核大门」：从 BPF 起源到未来方向，完整覆盖编程模型与 BCC、bpftrace 两大前端框架；另一主线是系统与应用性能调优，讲清 BPF 工具如何与 Linux 传统性能工具互补，工具小巧精致、源码易读，为内核开发之旅铺平道路。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247485127&idx=1&sn=1d9a0604ecd0d01c43b9d2235335dea7&chksm=e995c48adee24d9c8401e310b408bde8e09b8f1e373b51ac75d7d17c269ea6e41721b06985a)〕
+**《BPF 之巔：洞悉 Linux 系統和應用效能》（Brendan Gregg，電子工業出版社）**〔深度〕——繼《效能之巔》之后，本書為讀者「開啟 Linux 核心大門」：從 BPF 起源到未來方向，完整覆蓋程式設計模型與 BCC、bpftrace 兩大前端框架；另一主線是系統與應用效能調優，講清 BPF 工具如何與 Linux 傳統效能工具互補，工具小巧精致、原始碼易讀，為核心開發之旅鋪平道路。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247485127&idx=1&sn=1d9a0604ecd0d01c43b9d2235335dea7&chksm=e995c48adee24d9c8401e310b408bde8e09b8f1e373b51ac75d7d17c269ea6e41721b06985a)〕
 
-**《边缘云部署与运营：系统性实现方法》（Larry Peterson 等，机械工业出版社）**〔进阶〕——博主本人参与翻译的引进书。a16z 合伙人 Martin Casado 在序言中点破「反云」趋势：应用先迁上云、如今又分散部署，大公司把工作负载迁回自有的优化基础设施；正文以边缘云平台 Aether 为例，从架构设计到各子系统构建与运维细致拆解，补齐被深埋进三大云厂商的底层认知。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247486092&idx=1&sn=4eb2aee4e90c5daa4c10fbd1793ff1ce&chksm=e995c8c1dee241d7165f71a8e43f7cd027b5046424a5c5075ff5ba16ff349e74c978e70f551f)〕
+**《邊緣雲部署與運營：系統性實現方法》（Larry Peterson 等，機械工業出版社）**〔進階〕——博主本人參與翻譯的引進書。a16z 合夥人 Martin Casado 在序言中點破「反云」趨勢：應用先遷上雲、如今又分散部署，大公司把工作負載遷回自有的最佳化基礎設施；正文以邊緣雲平台 Aether 為例，從架構設計到各子系統構建與運維細緻拆解，補齊被深埋進三大雲廠商的底層認知。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247486092&idx=1&sn=4eb2aee4e90c5daa4c10fbd1793ff1ce&chksm=e995c8c1dee241d7165f71a8e43f7cd027b5046424a5c5075ff5ba16ff349e74c978e70f551f)〕
 
-## 三、云原生 AI 基础设施
+## 三、云原生 AI 基礎設施
 
-AI 集群跑在 Kubernetes 之上。这一层解决「算力资源怎么编排」：容器、调度、存储、数据库。分布式系统的底层规律，是这一层所有工具的设计根源。
+AI 叢集跑在 Kubernetes 之上。這一層解決「算力資源怎麼編排」：容器、排程、儲存、資料庫。分散式系統的底層規律，是這一層所有工具的設計根源。
 
-**《数据密集型应用系统设计》（Martin Kleppmann，中国电力出版社）**〔深度〕——全书分「数据系统基础—分布式数据—衍生数据」三部分：从可靠性、存储与检索，到复制、分区、事务、一致性与共识，再到批处理与流处理，从宏观层面讲清各项技术的共性与差异、把底层原理拆解透彻——理解了原理，也就明白每项技术的诞生背景、要解决的问题与适用场景。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247488960&idx=1&sn=92d650291882be60825766f75e3bc264&chksm=e995d78ddee25e9b06ff3fcc3990f6ea231b81019f514add32a978f5b53cf5aaa98a1032ddd9)〕
+**《資料密集型應用系統設計》（Martin Kleppmann，中國電力出版社）**〔深度〕——全書分「資料系統基礎—分散式資料—衍生資料」三部分：從可靠性、儲存與檢索，到複製、分割槽、事務、一致性與共識，再到批處理與流處理，從宏觀層面講清各項技術的共性與差異、把底層原理拆解透徹——理解了原理，也就明白每項技術的誕生背景、要解決的問題與適用場景。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247488960&idx=1&sn=92d650291882be60825766f75e3bc264&chksm=e995d78ddee25e9b06ff3fcc3990f6ea231b81019f514add32a978f5b53cf5aaa98a1032ddd9)〕
 
-**《分布式系统应用设计（第二版）》（Brendan Burns，中国电力出版社）**〔入门〕——Kubernetes 共同创始人 Brendan Burns 的可复用设计模式手册：单机层面讲边车、大使、适配器模式（Istio 即边车模式的典型应用），集群层面覆盖负载均衡、分片、分散聚集、FaaS 与所有权选举；并以「算法编程—面向对象—容器编排」三阶段视角串起设计模式发展史。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247488705&idx=1&sn=d832c8feb6b87a31f7e76089fbaf9f9e&chksm=e995d68cdee25f9a522bc2d367ad147b12e3edd70959618625dc6634a2ce28decb8fef728691)〕
+**《分散式系統應用設計（第二版）》（Brendan Burns，中國電力出版社）**〔入門〕——Kubernetes 共同創始人 Brendan Burns 的可複用設計模式手冊：單機層面講邊車、大使、介面卡模式（Istio 即邊車模式的典型應用），叢集層面覆蓋負載均衡、分片、分散聚集、FaaS 與所有權選舉；並以「演算法程式設計—物件導向—容器編排」三階段視角串起設計模式發展史。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247488705&idx=1&sn=d832c8feb6b87a31f7e76089fbaf9f9e&chksm=e995d68cdee25f9a522bc2d367ad147b12e3edd70959618625dc6634a2ce28decb8fef728691)〕
 
-**《自己动手写 Docker》**〔进阶〕——用 Golang 从零实现一个精简容器运行时：从 run 命令起步，逐步打通 Namespace 隔离、cgroups 资源限制、rootfs 与 OverlayFS 镜像分层、数据卷与 Bridge 容器网络，每步配教程与对应 GitHub 分支代码；原书第一版年代久远，可结合作者博客的新版教程学习〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247486086&idx=1&sn=f845a71f806d772568e7a262cbac69bd&chksm=e995c8cbdee241ddd755e5018560566b11a3b25120f67ea99e282d59078330942c8572c27cbe)〕。
+**《自己動手寫 Docker》**〔進階〕——用 Golang 從零實現一個精簡容器執行時：從 run 命令起步，逐步打通 Namespace 隔離、cgroups 資源限制、rootfs 與 OverlayFS 映象分層、資料卷與 Bridge 容器網路，每步配教程與對應 GitHub 分支程式碼；原書第一版年代久遠，可結合作者部落格的新版教程學習〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247486086&idx=1&sn=f845a71f806d772568e7a262cbac69bd&chksm=e995c8cbdee241ddd755e5018560566b11a3b25120f67ea99e282d59078330942c8572c27cbe)〕。
 
-**《云原生数据库：原理与实践》（李飞飞、周烜等，电子工业出版社）**〔进阶〕——阿里云数据库团队撰写（第一作者李飞飞），以 PolarDB 工程落地贯穿：从 B+ 树、LSM-Tree 到 X-Engine 的存储引擎演进，计算存储分离与 Raft/Parallel Raft 高可用，再到 PolarDB-X 分布式事务与 HTAP 实践，是一本「值得放在手边常读常新」的云原生数据库工具书。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489770&idx=1&sn=1e9b1f1d10907de0d5c0a0d25e902572&chksm=e995daa7dee253b14feec9ddc0280e5660de1060bbaf1bf317c5bd7499ed564224137c347ecc)〕
+**《雲原生資料庫：原理與實踐》（李飛飛、周烜等，電子工業出版社）**〔進階〕——阿里雲資料庫團隊撰寫（第一作者李飛飛），以 PolarDB 工程落地貫穿：從 B+ 樹、LSM-Tree 到 X-Engine 的儲存引擎演進，計算儲存分離與 Raft/Parallel Raft 高可用，再到 PolarDB-X 分散式事務與 HTAP 實踐，是一本「值得放在手邊常讀常新」的雲原生資料庫工具書。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489770&idx=1&sn=1e9b1f1d10907de0d5c0a0d25e902572&chksm=e995daa7dee253b14feec9ddc0280e5660de1060bbaf1bf317c5bd7499ed564224137c347ecc)〕
 
-## 四、底层计算与异构编程
+## 四、底層計算與異構程式設計
 
-再往下一层是「亲手写算子」：CUDA 线程模型、共享内存、Tensor Core。这一层决定工程师能否真正榨干 GPU。中文实战书稀缺，从经典中选两本互补的入门路径。
+再往下一層是「親手寫算子」：CUDA 執行緒模型、共享記憶體、Tensor Core。這一層決定工程師能否真正榨乾 GPU。中文實戰書稀缺，從經典中選兩本互補的入門路徑。
 
-**《CUDA C 编程权威指南》（John Cheng（程润伟）、Max Grossman、Ty McKercher，机械工业出版社）**〔入门〕——英文原书 *Professional CUDA C Programming*，NVIDIA 工程师团队撰写的经典入门，线程/块/网格模型、内存优化、原子操作循序渐进，配套代码可直接编译运行，是 CUDA 从零到一的标准路径。
+**《CUDA C 程式設計權威指南》（John Cheng（程潤偉）、Max Grossman、Ty McKercher，機械工業出版社）**〔入門〕——英文原書 *Professional CUDA C Programming*，NVIDIA 工程師團隊撰寫的經典入門，執行緒/塊/網格模型、記憶體最佳化、原子操作循序漸進，配套程式碼可直接編譯執行，是 CUDA 從零到一的標準路徑。
 
-**《大规模并行处理器程序设计（原书第 4 版）》（Kirk & Hwu，机械工业出版社）**〔进阶〕——美国大学 GPU 编程标准教材（PMPP），从并行思维而非语法出发讲 GPU 编程。第 4 版中译 2025 年上市（第 3 版仅有英文影印版），按「中文优先」原则推荐中译本；英文无障碍的读者亦可直接读原版。
+**《大規模並行處理器程式設計（原書第 4 版）》（Kirk & Hwu，機械工業出版社）**〔進階〕——美國大學 GPU 程式設計標準教材（PMPP），從並行思維而非語法出發講 GPU 程式設計。第 4 版中譯 2025 年上市（第 3 版僅有英文影印版），按「中文優先」原則推薦中譯本；英文無障礙的讀者亦可直接讀原版。
 
-> 动手环节可配合 AI Fundamentals 仓库的 [CUDA-Learn-Notes](https://github.com/xlite-dev/CUDA-Learn-Notes)（200+ 个优化内核示例）与 [nano-vllm](https://github.com/ForceInjection/nano-vllm)（约 1400 行实现核心推理机制的迷你 vLLM）巩固。
+> 動手環節可配合 AI Fundamentals 倉庫的 [CUDA-Learn-Notes](https://github.com/xlite-dev/CUDA-Learn-Notes)（200+ 個最佳化核心示例）與 [nano-vllm](https://github.com/ForceInjection/nano-vllm)（約 1400 行實現核心推理機制的迷你 vLLM）鞏固。
 
-## 五、大语言模型应用开发与编排
+## 五、大語言模型應用開發與編排
 
-从「会调 API」到「能交付应用」的中间地带：提示工程、AI 编程工具、应用框架选型。这一层入门门槛最低、市面书最多，也是最容易踩「营销书」坑的领域——以下两本均经过公众号实测推荐。
+從「會調 API」到「能交付應用」的中間地帶：提示工程、AI 程式設計工具、應用框架選型。這一層入門門檻最低、市面書最多，也是最容易踩「營銷書」坑的領域——以下兩本均經過公眾號實測推薦。
 
-**《动手构建大模型》（Louis-François Bouchard & Louie Peters，人民邮电出版社）**〔入门〕——面向生产环境的端到端实践指南，目标明确：帮开发者跨过 Demo 阶段走向生产级系统。约 330 页覆盖 Prompting、RAG、微调、智能体、部署与评估全链路，配套 Colab 开箱即练，被一线工程师视作「反复翻、随手查」的实践手册；LlamaIndex CEO 称其为「迄今构建 LLM 应用最全面的教材之一」。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491484&idx=1&sn=39d905c8b5b4c5f7e6a7d33ee985609e&chksm=e995ddd1dee254c7050b3ffab0b9f66ef032d6fc88b697024a90ca4b919ff24bfdc9f6391be4)〕
+**《動手構建大模型》（Louis-François Bouchard & Louie Peters，人民郵電出版社）**〔入門〕——面向生產環境的端到端實踐指南，目標明確：幫開發者跨過 Demo 階段走向生產級系統。約 330 頁覆蓋 Prompting、RAG、微調、智能體、部署與評估全鏈路，配套 Colab 開箱即練，被一線工程師視作「反覆翻、隨手查」的實踐手冊；LlamaIndex CEO 稱其為「迄今構建 LLM 應用最全面的教材之一」。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491484&idx=1&sn=39d905c8b5b4c5f7e6a7d33ee985609e&chksm=e995ddd1dee254c7050b3ffab0b9f66ef032d6fc88b697024a90ca4b919ff24bfdc9f6391be4)〕
 
-**《Cursor 与 MCP 快速入门：零基础开发智能体应用》（黄桂钊，人民邮电出版社）**〔入门〕——30 多个亲手实践的案例贯穿全书，核心公式「一个清晰的创意 + 精准的需求描述 = 智能体生成可运行的应用」：从亲子游戏、教学场景到招牌设计、小红书文案等商业变现，再到 Sealos 云端部署全流程；并手把手讲透 MCP 架构、自定义 Server 开发与阿里云百炼智能体集成。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490746&idx=1&sn=4eeca1838aad0cd4a8b7a87c19052331&chksm=e995def7dee257e133d0cd9d9471a0995319a66a5d54cc2f131f1c7b7ac1ea4d33ce1348df32)〕
+**《Cursor 與 MCP 快速入門：零基礎開發智能體應用》（黃桂釗，人民郵電出版社）**〔入門〕——30 多個親手實踐的案例貫穿全書，核心公式「一個清晰的創意 + 精准的需求描述 = 智能體生成可執行的應用」：從親子游戲、教學場景到招牌設計、小紅書文案等商業變現，再到 Sealos 云端部署全流程；並手把手講透 MCP 架構、自定義 Server 開發與阿里雲百鍊智能體整合。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490746&idx=1&sn=4eeca1838aad0cd4a8b7a87c19052331&chksm=e995def7dee257e133d0cd9d9471a0995319a66a5d54cc2f131f1c7b7ac1ea4d33ce1348df32)〕
 
-## 六、机器学习基础
+## 六、機器學習基礎
 
-AI 的基础学科。这一层不直接产出功能，但决定工程师对模型行为的直觉：损失函数为什么这样设计、正则化在解决什么、生成模型与判别模型的本质区别。
+AI 的基礎學科。這一層不直接產出功能，但決定工程師對模型行為的直覺：損失函式為什麼這樣設計、正則化在解決什麼、生成模型與判別模型的本質區別。
 
-**《深度学习：基础与概念》（Christopher Bishop，人民邮电出版社）**〔进阶〕——大模型时代还需要啃深度学习教科书吗？作者的答案是「理解本质，才能创造未来」。全书以概率论为基石，从单层网络讲到 Transformer、扩散模型等前沿架构，辛顿、杨立昆、本吉奥三巨头联袂推荐，并提供与《模式识别与机器学习》衔接的阅读建议。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489954&idx=1&sn=b270b5afddb8a59b3d68bd50a0046f9a&chksm=e995dbefdee252f915ecb4541fe402fa57c44d4d28654d35679b14f7f48425794047994447)〕
+**《深度學習：基礎與概念》（Christopher Bishop，人民郵電出版社）**〔進階〕——大模型時代還需要啃深度學習教科書嗎？作者的答案是「理解本質，才能創造未來」。全書以機率論為基石，從單層網路講到 Transformer、擴散模型等前沿架構，辛頓、楊立昆、本吉奧三巨頭聯袂推薦，並提供與《模式識別與機器學習》銜接的閱讀建議。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489954&idx=1&sn=b270b5afddb8a59b3d68bd50a0046f9a&chksm=e995dbefdee252f915ecb4541fe402fa57c44d4d28654d35679b14f7f48425794047994447)〕
 
-**《深度学习的数学工程：模型背后的数学原理》（Benoit Liquet 等，王斌译，人民邮电出版社）**〔进阶〕——源自澳洲名校暑期学校课程、美亚评分 5.0 的硬核著作：既非调包手册也非纯理论，以「工程视角」拆解深度学习背后的数学逻辑，从微积分、线性代数、概率论逐步构建到 Transformer 与图神经网络，本科一年级数学基础即可入门，小米 AI 实验室主任王斌翻译。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492552&idx=1&sn=c57ef7ad02c225ad90e2b3dd33dd7b84&chksm=e9962185dee1a893ea04f8daf6b1036aa9dd74be89b58f516f0130d5a4cf836085cde9faa3c2)〕
+**《深度學習的數學工程：模型背後的數學原理》（Benoit Liquet 等，王斌譯，人民郵電出版社）**〔進階〕——源自澳洲名校暑期學校課程、美亞評分 5.0 的硬核著作：既非調包手冊也非純理論，以「工程視角」拆解深度學習背後的數學邏輯，從微積分、線性代數、機率論逐步構建到 Transformer 與圖神經網路，本科一年級數學基礎即可入門，小米 AI 實驗室主任王斌翻譯。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492552&idx=1&sn=c57ef7ad02c225ad90e2b3dd33dd7b84&chksm=e9962185dee1a893ea04f8daf6b1036aa9dd74be89b58f516f0130d5a4cf836085cde9faa3c2)〕
 
-**《大模型技术 30 讲》（Sebastian Raschka，叶文滔译，人民邮电出版社）**〔入门〕——《Machine Learning Q and AI》的中译本：30 个高频问答覆盖神经网络与深度学习、计算机视觉、NLP、生产与部署、预测性能与模型评测五个主题，180 余页短小精悍，适合查漏补缺的「问答词典」。
+**《大模型技術 30 講》（Sebastian Raschka，葉文滔譯，人民郵電出版社）**〔入門〕——《Machine Learning Q and AI》的中譯本：30 個高頻問答覆蓋神經網路與深度學習、計算機視覺、NLP、生產與部署、預測效能與模型評測五個主題，180 餘頁短小精悍，適合查漏補缺的「問答詞典」。
 
-**《统计学习方法》（李航，清华大学出版社）**〔进阶〕——国内最经典的机器学习教材，感知机、SVM、HMM、CRF 的数学推导清晰严谨，是「知其所以然」的标准答案书。
+**《統計學習方法》（李航，清華大學出版社）**〔進階〕——國內最經典的機器學習教材，感知機、SVM、HMM、CRF 的數學推導清晰嚴謹，是「知其所以然」的標準答案書。
 
-**《机器学习》（周志华，清华大学出版社）**〔入门〕——「西瓜书」，用西瓜数据集讲透机器学习全谱系，兼顾广度与深度，适合与《统计学习方法》配合互为补充。
+**《機器學習》（周志華，清華大學出版社）**〔入門〕——「西瓜書」，用西瓜資料集講透機器學習全譜系，兼顧廣度與深度，適合與《統計學習方法》配合互為補充。
 
-**《深度学习入门 5：生成模型》（斋藤康毅，人民邮电出版社）**〔入门〕——「鱼书」系列第五部：前四部豆瓣评分均 9.0+、中文版狂卖 19 万册。全书以连贯故事分 10 步从正态分布、EM 算法讲到 VAE 与扩散模型，用男女身高差解释双峰分布、用猜谜游戏类比 EM 算法，最后手把手实现简化版 Stable Diffusion。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490193&idx=1&sn=60878aa47b9624e9b5d32e0537020b86&chksm=e995d8dcdee251cad3b905d26d767db4a1252ec8ff0c5fc58bf52cfdc2bf7ff3561366c82923)〕
+**《深度學習入門 5：生成模型》（齋藤康毅，人民郵電出版社）**〔入門〕——「魚書」系列第五部：前四部豆瓣評分均 9.0+、中文版狂賣 19 萬冊。全書以連貫故事分 10 步從正態分佈、EM 演算法講到 VAE 與擴散模型，用男女身高差解釋雙峰分佈、用猜謎遊戲類比 EM 算法，最後手把手實現簡化版 Stable Diffusion。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490193&idx=1&sn=60878aa47b9624e9b5d32e0537020b86&chksm=e995d8dcdee251cad3b905d26d767db4a1252ec8ff0c5fc58bf52cfdc2bf7ff3561366c82923)〕
 
-**《精通特征工程》（Alice Zheng & Amanda Casari，人民邮电出版社）**〔进阶〕——「数据决定了模型的上限，算法只是无限逼近这个上限」——本书正是这句话的完整注解：数值、类别、文本、时间序列四类数据的特征构造、转换与选择方法全覆盖，配代码示例与金融风控、电商推荐等实战案例，并介绍 Featuretools 等自动化特征工程工具。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489464&idx=1&sn=47671131ea315e2d46859ad077ae528d&chksm=e995d5f5dee25ce3ca0003fb097604eabc8970fa5de82d727524cb1e68c6025793c9f7e50bb0)〕
+**《精通特徵工程》（Alice Zheng & Amanda Casari，人民郵電出版社）**〔進階〕——「資料決定了模型的上限，演算法只是無限逼近這個上限」——本書正是這句話的完整註解：數值、類別、文本、時間序列四類資料的特徵構造、轉換與選擇方法全覆蓋，配程式碼示例與金融風控、電商推薦等實戰案例，並介紹 Featuretools 等自動化特徵工程工具。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489464&idx=1&sn=47671131ea315e2d46859ad077ae528d&chksm=e995d5f5dee25ce3ca0003fb097604eabc8970fa5de82d727524cb1e68c6025793c9f7e50bb0)〕
 
-## 七、大语言模型理论与基础
+## 七、大語言模型理論與基礎
 
-理解 Transformer 为何能「涌现」出语言能力。这一层是当前书市竞争最激烈的赛道，从 200 页小册子到千页巨著都有，按阅读深度排序推荐。
+理解 Transformer 為何能「湧現」出語言能力。這一層是當前書市競爭最激烈的賽道，從 200 頁小冊子到千頁鉅著都有，按閱讀深度排序推薦。
 
-**《How Large Language Models Work》（Stella Biderman 等）**〔入门〕——仅 200 页的 LLM 入门小册子：以清晰逻辑拆解大模型核心机制，覆盖预训练、微调、RAG、评估、对齐与可靠性设计等关键议题，提供可落地的技术路径，内容紧贴前沿，适合想系统掌握 LLM 底层原理、为论文或项目构建坚实方法论的硕博生。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492451&idx=1&sn=141224caacec6e06f7ec4111dce89dff&chksm=e996212edee1a838e436c1eaeec2dfc67fa902e5f9bc3ec01041f060eb00c8862049686f28e4)〕
+**《How Large Language Models Work》（Stella Biderman 等）**〔入門〕——僅 200 頁的 LLM 入門小冊子：以清晰邏輯拆解大模型核心機制，覆蓋預訓練、微調、RAG、評估、對齊與可靠性設計等關鍵議題，提供可落地的技術路徑，內容緊貼前沿，適合想系統掌握 LLM 底層原理、為論文或專案構建堅實方法論的碩博生。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492451&idx=1&sn=141224caacec6e06f7ec4111dce89dff&chksm=e996212edee1a838e436c1eaeec2dfc67fa902e5f9bc3ec01041f060eb00c8862049686f28e4)〕
 
-**《大语言模型》（Terrence Sejnowski，李梦佳译，中信出版社）**〔入门〕——四院院士、玻尔兹曼机共同发明者谢诺夫斯基新作：以「AI 反向测试人类」现象切入，提出「反向图灵测试」与「厄里斯魔镜」假说，追问 LLM 是否真正理解语言，并给出幻觉是创造力体现、从「我思故我在」到「我演算故我在」等洞见，是技术书之外的思想书。
+**《大語言模型》（Terrence Sejnowski，李夢佳譯，中信出版社）**〔入門〕——四院院士、玻爾茲曼機共同發明者謝諾夫斯基新作：以「AI 反向測試人類」現象切入，提出「反向圖靈測試」與「厄里斯魔鏡」假說，追問 LLM 是否真正理解語言，並給出幻覺是創造力體現、從「我思故我在」到「我演算故我在」等洞見，是技術書之外的思想書。
 
-**《图解大模型：生成式 AI 原理与实战》（Jay Alammar & Maarten Grootendorst，李博杰译，人民邮电出版社）**〔入门〕——图解 Transformer 原作者的作品，300+ 全彩插图覆盖分词、嵌入、Transformer、RAG、微调、多模态全链条，随书附赠「图解 DeepSeek-R1」彩蛋与 155 道面试题。入门体验最好的中文图文书。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490376&idx=1&sn=084c6a98a9921461d17cb16a943ad8e7&chksm=e995d905dee250132d46570b554ba8b557483d144183b6b07a1584e9a439d050501ff4ba871)〕
+**《圖解大模型：生成式 AI 原理與實戰》（Jay Alammar & Maarten Grootendorst，李博傑譯，人民郵電出版社）**〔入門〕——圖解 Transformer 原作者的作品，300+ 全綵插圖覆蓋分詞、嵌入、Transformer、RAG、微調、多模態全鏈條，隨書附贈「圖解 DeepSeek-R1」彩蛋與 155 道面試題。入門體驗最好的中文圖文書。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490376&idx=1&sn=084c6a98a9921461d17cb16a943ad8e7&chksm=e995d905dee250132d46570b554ba8b557483d144183b6b07a1584e9a439d050501ff4ba871)〕
 
-**《大模型基础》（浙江大学 ZJU-LLMs 团队，开源书籍）**〔进阶〕——开源书籍的标杆：传统语言模型、架构演化、Prompt 工程、参数高效微调、模型编辑、RAG 六章，月度更新紧跟论文前沿，附完整 PDF 免费下载。学生党友好。
+**《大模型基礎》（浙江大學 ZJU-LLMs 團隊，開源書籍）**〔進階〕——開源書籍的標杆：傳統語言模型、架構演化、Prompt 工程、參數高效微調、模型編輯、RAG 六章，月度更新緊跟論文前沿，附完整 PDF 免費下載。學生黨友好。
 
-**《百面大模型》（包梦蛟、刘如日、朱俊达，人民邮电出版社）**〔进阶〕——面向大模型求职热点的实战工具书：以「面试题 × 技术点 × 项目实战」三位一体结构组织 100 道核心面试题，覆盖预训练、对齐（PPO/DPO）、RAG、智能体与推理加速等求职五大模块，每章配代码实战与工程图解。不是「背题集」，而是从「知道」到「能做」的成长路径。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489907&idx=1&sn=7209048dad89e2fb90865ed778f111a8&chksm=e995db3edee25228d3b9233e7935f601622ac47e4d8a1008e80b19303f22e6da3969d586f307)〕
+**《百面大模型》（包夢蛟、劉如日、朱儁達，人民郵電出版社）**〔進階〕——面向大模型求職熱點的實戰工具書：以「面試題 × 技術點 × 專案實戰」三位一體結構組織 100 道核心面試題，覆蓋預訓練、對齊（PPO/DPO）、RAG、智能體與推理加速等求職五大模組，每章配程式碼實戰與工程圖解。不是「背題集」，而是從「知道」到「能做」的成長路徑。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489907&idx=1&sn=7209048dad89e2fb90865ed778f111a8&chksm=e995db3edee25228d3b9233e7935f601622ac47e4d8a1008e80b19303f22e6da3969d586f307)〕
 
-## 八、大模型训练
+## 八、大模型訓練
 
-把模型从随机权重训练到可用，是算力、数据、并行策略的三角工程。这一层书籍最少、门槛最高，两本足以构建完整认知。
+把模型從隨機權重訓練到可用，是算力、資料、並行策略的三角工程。這一層書籍最少、門檻最高，兩本足以構建完整認知。
 
-**《从零构建大模型》（Sebastian Raschka，人民邮电出版社）**〔进阶〕——从零手写一个 GPT 风格模型，填补「资料或过于抽象、或高度依赖框架封装」的空白：从文本预处理、词嵌入、注意力机制讲到 Transformer 与 GPT 架构，完整走通预训练、指令微调与部署，代码全部开源（含中文注释版），自注意力实现仅 50 行，小数据集在个人电脑即可跑通。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489728&idx=1&sn=a62683e9c1d7b4f45c40128b15167edb&chksm=e995da8ddee2539b7d52a99491fc2b225fefdcdff987eaf54c9ba7149517aea21cd2ac277ea1)〕
+**《從零構建大模型》（Sebastian Raschka，人民郵電出版社）**〔進階〕——從零手寫一個 GPT 風格模型，填補「資料或過於抽象、或高度依賴框架封裝」的空白：從文字預處理、詞嵌入、注意力機制講到 Transformer 與 GPT 架構，完整走通預訓練、指令微調與部署，程式碼全部開源（含中文註釋版），自注意力實現僅 50 行，小資料集在個人電腦即可跑通。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489728&idx=1&sn=a62683e9c1d7b4f45c40128b15167edb&chksm=e995da8ddee2539b7d52a99491fc2b225fefdcdff987eaf54c9ba7149517aea21cd2ac277ea1)〕
 
-**《大规模语言模型：从理论到实践（第二版）》（张奇、桂韬、郑锐、黄萱菁，电子工业出版社）**〔深度〕——复旦大学四位作者的系统性著作：第二版新增 50% 以上全新内容，涵盖 MOE、多模态、智能体、RAG、效率优化、评估与应用开发等热门方向，构建「理论基础 → 数据处理 → 模型训练 → 应用部署」的完整技术闭环，官方主页提供免费预览版电子书。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489809&idx=1&sn=799e43b526c75d90ed9297d910395b14&chksm=e995db5cdee2524af696f4414017d64e1f12c784fb71039a3bd582a87cd67146815e94292c8f)〕
+**《大規模語言模型：從理論到實踐（第二版）》（張奇、桂韜、鄭銳、黃萱菁，電子工業出版社）**〔深度〕——復旦大學四位作者的系統性著作：第二版新增 50% 以上全新內容，涵蓋 MOE、多模態、智能體、RAG、效率最佳化、評估與應用開發等熱門方向，構建「理論基礎 → 資料處理 → 模型訓練 → 應用部署」的完整技術閉環，官方主頁提供免費預覽版電子書。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489809&idx=1&sn=799e43b526c75d90ed9297d910395b14&chksm=e995db5cdee2524af696f4414017d64e1f12c784fb71039a3bd582a87cd67146815e94292c8f)〕
 
 ## 九、大模型推理
 
-推理是 AI 基础设施的「最后一公里」：KV Cache、批处理、投机解码、PD 分离，直接决定每 token 成本。中文专著极少，这本 2026 年新书是稀缺的实战型补充。
+推理是 AI 基礎設施的「最后一公里」：KV Cache、批處理、投機解碼、PD 分離，直接決定每 token 成本。中文專著極少，這本 2026 年新書是稀缺的實戰型補充。
 
-**《vLLM 与 SGLang：大模型高效推理双引擎实战》（李明飞，电子工业出版社）**〔进阶〕——对比两大推理引擎：vLLM 走「通用极致性能」路线，SGLang 走「场景深度优化」路线，拆透 PagedAttention 与 RadixAttention 的缓存哲学；7 个生产级项目覆盖 90% 以上落地需求，附三维度选型决策矩阵。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492750&idx=1&sn=0dc47c03f65609d03fdd8b15cd10dad9&chksm=e99626c3dee1afd5138aa3d3d9676e2a32edd3dbc7d6f39d66b4d28ad6d6308b4d9e4773f641)〕
+**《vLLM 與 SGLang：大模型高效推理雙引擎實戰》（李明飛，電子工業出版社）**〔進階〕——對比兩大推理引擎：vLLM 走「通用極致效能」路線，SGLang 走「場景深度最佳化」路線，拆透 PagedAttention 與 RadixAttention 的快取哲學；7 個生產級專案覆蓋 90% 以上落地需求，附三維度選型決策矩陣。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492750&idx=1&sn=0dc47c03f65609d03fdd8b15cd10dad9&chksm=e99626c3dee1afd5138aa3d3d9676e2a32edd3dbc7d6f39d66b4d28ad6d6308b4d9e4773f641)〕
 
-> 原理层面可配合 AI Fundamentals 仓库的 KV Cache 技术体系、vLLM 模块分析等文章做源码级补充。
+> 原理層面可配合 AI Fundamentals 倉庫的 KV Cache 技術體系、vLLM 模組分析等文章做原始碼級補充。
 
-## 十、企业级 AI Agent 开发
+## 十、企業級 AI Agent 開發
 
-从「模型」到「员工」：工具调用、记忆、规划、多智能体协作。2025-2026 年中文 Agent 书集中爆发，按「工程深度」分层推荐。
+從「模型」到「員工」：工具呼叫、記憶、規劃、多智能體協作。2025-2026 年中文 Agent 書集中爆發，按「工程深度」分層推薦。
 
-**《Agent Skills 开发实战：像搭积木一样构建智能体》（代晶，人民邮电出版社）**〔进阶〕——从 OpenClaw 登顶 GitHub Star 榜首讲起：针对单体提示词的痛点，拆解 Skills 文件系统与渐进式披露机制，厘清 Skills（该怎么做）与 MCP（能做什么）的分工；电商经营报表、医疗病历清洗两个企业级案例贯穿始终。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492729&idx=1&sn=0c766381aec1dff4e9686e80231fcac1&chksm=e9962634dee1af22a679fc7829f4832a5cb1dfeda4d5e2561cef136e371c53ff37f439c6a8b2)〕
+**《Agent Skills 開發實戰：像搭積木一樣構建智能體》（代晶，人民郵電出版社）**〔進階〕——從 OpenClaw 登頂 GitHub Star 榜首講起：針對單體提示詞的痛點，拆解 Skills 檔案系統與漸進式披露機制，釐清 Skills（該怎麼做）與 MCP（能做什麼）的分工；電商經營報表、醫療病歷清洗兩個企業級案例貫穿始終。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492729&idx=1&sn=0c766381aec1dff4e9686e80231fcac1&chksm=e9962634dee1af22a679fc7829f4832a5cb1dfeda4d5e2561cef136e371c53ff37f439c6a8b2)〕
 
-**《动手学大模型智能体》（温睦宁、林江浩、张伟楠、俞勇，人民邮电出版社）**〔进阶〕——上海交大团队的 15 章教学实践课程，分基础（提示、评估）、架构（记忆、RAG、工具、规划）、微调（指令微调、LoRA、强化微调）、前沿（多模态、多智能体、安全、协议）四篇，理论与示例代码并重，配套课件与在线课程，亦适合作高校辅助教材。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491444&idx=1&sn=25c4b9309d943b11993eaeec03467c37&chksm=e995dd39dee2542fd2a9871560b0bd033425a236f0f5db5f3501978349c1ea41efa03b58053c)〕
+**《動手學大模型智能體》（溫睦寧、林江浩、張偉楠、俞勇，人民郵電出版社）**〔進階〕——上海交大團隊的 15 章教學實踐課程，分基礎（提示、評估）、架構（記憶、RAG、工具、規劃）、微調（指令微調、LoRA、強化微調）、前沿（多模態、多智能體、安全、協議）四篇，理論與示例程式碼並重，配套課件與線上課程，亦適合作高校輔助教材。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491444&idx=1&sn=25c4b9309d943b11993eaeec03467c37&chksm=e995dd39dee2542fd2a9871560b0bd033425a236f0f5db5f3501978349c1ea41efa03b58053c)〕
 
-**《Agent 设计模式：图解可复用智能体架构》（黄佳，人民邮电出版社）**〔深度〕——从 GoF 23 种经典设计模式到「概率性智能」时代的迁移：六大主轴（感知、记忆、推理、行动、反思、协作）× 21 个核心模式，并以 OpenClaw 架构实证；后记「熵的园丁」之喻道出真谛——工程师是培育可演化的生态，而非构建精密机器。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492016&idx=1&sn=e14d972a0f44fab98ee82f124325b88f&chksm=e99623fddee1aaeb2549a67f0ba7b16ec16e049fec4358e163fadf7e785d79a4c0f141c826c0)〕
+**《Agent 設計模式：圖解可複用智能體架構》（黃佳，人民郵電出版社）**〔深度〕——從 GoF 23 種經典設計模式到「概率性智能」時代的遷移：六大主軸（感知、記憶、推理、行動、反思、協作）× 21 個核心模式，並以 OpenClaw 架構實證；後記「熵的園丁」之喻道出真諦——工程師是培育可演化的生態，而非構建精密機器。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492016&idx=1&sn=e14d972a0f44fab98ee82f124325b88f&chksm=e99623fddee1aaeb2549a67f0ba7b16ec16e049fec4358e163fadf7e785d79a4c0f141c826c0)〕
 
-**《AI 工程》（Chip Huyen，宝玉译，人民邮电出版社·图灵）**〔进阶〕——O'Reilly 阅读量最高的 AI 工程书；作者 Chip Huyen 曾任 NVIDIA NeMo 核心开发者，坚持「工具会很快过时，但基础原理应该持续更长时间」，不堆代码、原理优先，覆盖评估、幻觉、RAG、Agent 与成本安全。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491620&idx=1&sn=972420de7d680cc3c4604264a3e1e843&chksm=e9962269dee1ab7f57dacadb8c9358d8b3e2d0cb9c6c4837f6c9387d519cd7c44bde0e68a9b5)〕
+**《AI 工程》（Chip Huyen，寶玉譯，人民郵電出版社·圖靈）**〔進階〕——O'Reilly 閱讀量最高的 AI 工程書；作者 Chip Huyen 曾任 NVIDIA NeMo 核心開發者，堅持「工具會很快過時，但基礎原理應該持續更長時間」，不堆程式碼、原理優先，覆蓋評估、幻覺、RAG、Agent 與成本安全。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491620&idx=1&sn=972420de7d680cc3c4604264a3e1e843&chksm=e9962269dee1ab7f57dacadb8c9358d8b3e2d0cb9c6c4837f6c9387d519cd7c44bde0e68a9b5)〕
 
-**《MCP 开发从入门到实战》（杨威理，人民邮电出版社）**〔入门〕——MCP 少有的中文系统教程，把 MCP 比作「AI 应用领域的 USB-C 接口」：从协议架构与核心组件，到 Claude 桌面应用配置、天气预报服务器开发与 Inspector 调试，再到 Smithery 等生态实践，8 章循序渐进。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490328&idx=1&sn=952d9f89ea833f4da554530f0ac25418&chksm=e995d955dee25043a88a355aed821e2828591e145b9050788c6cc9b141aa2715a80a8f895dba)〕
+**《MCP 開發從入門到實戰》（楊威理，人民郵電出版社）**〔入門〕——MCP 少有的中文系統教程，把 MCP 比作「AI 應用領域的 USB-C 接口」：從協議架構與核心元件，到 Claude 桌面應用配置、天氣預報伺服器開發與 Inspector 除錯，再到 Smithery 等生態實踐，8 章循序漸進。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490328&idx=1&sn=952d9f89ea833f4da554530f0ac25418&chksm=e995d955dee25043a88a355aed821e2828591e145b9050788c6cc9b141aa2715a80a8f895dba)〕
 
-**《生成式 AI 开发揭秘：大模型详解》（田雪松，机械工业出版社）**〔进阶〕——全栈技术指南：「白话原理 + 代码复现」拆解 Transformer 与扩散模型，覆盖 NLP、语音、视觉全模态、Agent、RAG；工程化最硬核——Scaling Laws 算力估算、消费级显卡 LoRA 微调、量化蒸馏、RLHF 评测。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491283&idx=1&sn=f2c25087edef5f0c2abe5b32532b38f3&chksm=e995dc9edee255888667600bb7c5249093222b04990138f47d34141065c66d768b2ad8ebdf33)〕
+**《生成式 AI 開發揭秘：大模型詳解》（田雪松，機械工業出版社）**〔進階〕——全棧技術指南：「白話原理 + 程式碼復現」拆解 Transformer 與擴散模型，覆蓋 NLP、語音、視覺全模態、Agent、RAG；工程化最硬核——Scaling Laws 算力估算、消費級顯示卡 LoRA 微調、量化蒸餾、RLHF 評測。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491283&idx=1&sn=f2c25087edef5f0c2abe5b32532b38f3&chksm=e995dc9edee255888667600bb7c5249093222b04990138f47d34141065c66d768b2ad8ebdf33)〕
 
-**《Generative AI in Action》（Amit Bahree，Manning）**〔进阶〕——微软首席项目经理 Amit Bahree 撰写，美亚评分 4.6：三部分 13 章，从认知、提示工程/RAG/微调技术到架构、成本与负责任 AI 治理，以「智能市场研报生成助手」案例贯穿全程，配套 GitHub 代码仓库可运行。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491289&idx=1&sn=1340dc9f385bee1b42924e9789bb7a83&chksm=e995dc94dee2558247b5fcafc444603aedca361293ab68e267eb1b2aa8ea56a9701b8240ea5a)〕
+**《Generative AI in Action》（Amit Bahree，Manning）**〔進階〕——微軟首席專案經理 Amit Bahree 撰寫，美亞評分 4.6：三部分 13 章，從認知、提示工程/RAG/微調技術到架構、成本與負責任 AI 治理，以「智慧市場研報生成助手」案例貫穿全程，配套 GitHub 程式碼倉庫可執行。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247491289&idx=1&sn=1340dc9f385bee1b42924e9789bb7a83&chksm=e995dc94dee2558247b5fcafc444603aedca361293ab68e267eb1b2aa8ea56a9701b8240ea5a)〕
 
-**《这就是 OpenClaw：半小时玩转小龙虾》（刘江，人民邮电出版社）**〔入门〕——作者刘江是「大模型」术语定名人、智源研究院创始副院长；用 9 个案例（智能体 Felix 月入近 20 万美元）讲透「AI 从认知工具转向执行主体」，以「喂粮食」「出门遛虾」式类比降低门槛，30 分钟零编程基础即可上手，专章给出安全配置。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492383&idx=2&sn=952b87461c3ba47553d2865a2cb298a6&chksm=e9962152dee1a8440fddfafd2a595cdaaf34921f9a23ad7cd66c8308d30bbd7e4b60f74b20f2)〕
+**《這就是 OpenClaw：半小時玩轉小龍蝦》（劉江，人民郵電出版社）**〔入門〕——作者劉江是「大模型」術語定名人、智源研究院創始副院長；用 9 個案例（智能體 Felix 月入近 20 萬美元）講透「AI 從認知工具轉向執行主體」，以「喂糧食」「出門遛蝦」式類比降低門檻，30 分鐘零程式設計基礎即可上手，專章給出安全配置。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492383&idx=2&sn=952b87461c3ba47553d2865a2cb298a6&chksm=e9962152dee1a8440fddfafd2a595cdaaf34921f9a23ad7cd66c8308d30bbd7e4b60f74b20f2)〕
 
-> 工具与协议层可配合 AI Fundamentals 仓库的 MCP 深度解析、上下文工程、记忆系统架构等文章。
+> 工具與協議層可配合 AI Fundamentals 倉庫的 MCP 深度解析、上下文工程、記憶系統架構等文章。
 
-## 十一、检索增强生成与文档智能
+## 十一、檢索增強生成與文件智慧
 
-RAG 解决「知识不进权重」的问题：让模型在回答时引用外部知识库。这一层从 2024 年起成为企业应用的主力形态。
+RAG 解決「知識不進權重」的問題：讓模型在回答時引用外部知識庫。這一層從 2024 年起成為企業應用的主力形態。
 
-**《大模型应用开发：RAG 实战课》（黄佳，人民邮电出版社）**〔进阶〕——从 0 到 1 构建可落地 RAG 系统的实战指南：从数据分块、向量检索的「从零手搓」到权限分层、溯源审计的工业级设计，覆盖 GraphRAG、Agentic RAG、多模态 RAG 前沿范式，首创「RAG 架构决策树」辅助技术选型。作者咖哥（黄佳）为新加坡科技研究局首席工程师，全书 132 张架构图，获宇树科技创始人王兴兴力荐。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490027&idx=1&sn=8f3366e5b9d39212a7b1f2d517bc54ef&chksm=e995dba6dee252b029e3dd4902f69ab42b4e7a5b3917ee68afe65480c5e2d229490316d054f2)〕
+**《大模型應用開發：RAG 實戰課》（黃佳，人民郵電出版社）**〔進階〕——從 0 到 1 構建可落地 RAG 系統的實戰指南：從資料分塊、向量檢索的「從零手搓」到許可權分層、溯源審計的工業級設計，覆蓋 GraphRAG、Agentic RAG、多模態 RAG 前沿范式，首創「RAG 架構決策樹」輔助技術選型。作者咖哥（黃佳）為新加坡科技研究局首席工程師，全書 132 張架構圖，獲宇樹科技創始人王興興力薦。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247490027&idx=1&sn=8f3366e5b9d39212a7b1f2d517bc54ef&chksm=e995dba6dee252b029e3dd4902f69ab42b4e7a5b3917ee68afe65480c5e2d229490316d054f2)〕
 
-**《大模型应用开发极简入门：基于 GPT-4 和 ChatGPT（第 2 版）》（Olivier Caelen & Marie-Alice Blete，何文斯译，人民邮电出版社）**〔入门〕——热销 2 万册的经典升级版：以 150 页（第 1 版）至 300 页（第 2 版）的精炼篇幅讲透提示工程、微调、RAG 三大范式，配套新闻稿生成器、YouTube 视频摘要等 6 大场景，代码开源、可直接复用。第 2 版新增 RAG、智能体工作流与 DeepSeek 开发案例，由 Dify 产品经理何文斯翻译，兼具学术严谨性与工业落地视角。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489547&idx=1&sn=408e0dc2223b5b288731ca570bf69547&chksm=e995da46dee253505bc87bbe7ae0b837de0ff07e9cc23e8515cff8a85c585f3bfa809d80be23)〕
+**《大模型應用開發極簡入門：基於 GPT-4 和 ChatGPT（第 2 版）》（Olivier Caelen & Marie-Alice Blete，何文斯譯，人民郵電出版社）**〔入門〕——熱銷 2 萬冊的經典升級版：以 150 頁（第 1 版）至 300 頁（第 2 版）的精煉篇幅講透提示工程、微調、RAG 三大范式，配套新聞稿生成器、YouTube 影片摘要等 6 大場景，程式碼開源、可直接複用。第 2 版新增 RAG、智能體工作流與 DeepSeek 開發案例，由 Dify 產品經理何文斯翻譯，兼具學術嚴謹性與工業落地視角。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247489547&idx=1&sn=408e0dc2223b5b288731ca570bf69547&chksm=e995da46dee253505bc87bbe7ae0b837de0ff07e9cc23e8515cff8a85c585f3bfa809d80be23)〕
 
-## 十二、课程体系与学习路径
+## 十二、課程體系與學習路徑
 
-单本书解决单点知识，体系化学习需要课程与路径。这一层收录体系化的免费课程资源。
+單本書解決單點知識，體系化學習需要課程與路徑。這一層收錄體系化的免費課程資源。
 
-**ZOMI 酱 AISystem（GitHub 开源课程）**〔进阶〕——AI 系统全栈开源课程（https://github.com/chenzomi12/AISystem）：硬件基础、编译器技术、推理优化、框架设计四大模块，B 站配套视频。AI 基础设施工程师的体系化免费教材，强烈建议通读。
+**ZOMI 醬 AISystem（GitHub 開源課程）**〔進階〕——AI 系統全棧開源課程（https://github.com/chenzomi12/AISystem）：硬件基础、编译器技术、推理优化、框架设计四大模块，B 站配套影片。AI 基礎設施工程師的體系化免費教材，強烈建議通讀。
 
-> 更多体系化资源可参考 AI Fundamentals 仓库的[课程体系章节](https://github.com/ForceInjection/AI-fundamentals)：Trae 编程实战课程、多智能体 AI 系统培训材料、微软 AI Agents for Beginners 课程等。
+> 更多體系化資源可參考 AI Fundamentals 倉庫的[課程體系章節](https://github.com/ForceInjection/AI-fundamentals)：Trae 程式設計實戰課程、多智能體 AI 系統培訓材料、微軟 AI Agents for Beginners 課程等。
 
-## 十三、AI Native 全栈实践
+## 十三、AI Native 全棧實踐
 
-Software 3.0：AI 编程助手成为「超级编译器」，工程方法论全面重构。2026 年的关键词是 Spec 驱动开发与 Harness 工程。
+Software 3.0：AI 程式設計助手成為「超級編譯器」，工程方法論全面重構。2026 年的關鍵詞是 Spec 驅動開發與 Harness 工程。
 
-**《SDD 实战：规范驱动开发之道》（黄佳，人民邮电出版社）**〔进阶〕——国内较早的系统性 Spec-Driven Development 专著。针对 Vibe Coding「需求蒸发、上下文漂移、不可审查、不可复现、不可维护」五大致命问题，提出「规范先行」：工程师的核心产出是 proposal.md、design.md、tasks.md 三份规范文档，代码只是 AI 依据规范生成的衍生物，构成项目的「唯一真相来源」。全书以「智能日报生成器」项目手把手演示六阶段工作流。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492680&idx=1&sn=1925b1f9e8b1f4471a592723e3607af5&chksm=e9962605dee1af139ebcb569dbdcf0625350cff1d168bc43fe9c4a0064fe967ece91665a3966)〕
+**《SDD 實戰：規範驅動開發之道》（黃佳，人民郵電出版社）**〔進階〕——國內較早的系統性 Spec-Driven Development 專著。針對 Vibe Coding「需求蒸发、上下文漂移、不可審查、不可復現、不可維護」五大致命問題，提出「規範先行」：工程師的核心產出是 proposal.md、design.md、tasks.md 三份規範文件，程式碼只是 AI 依據規範生成的衍生物，構成專案的「唯一真相來源」。全書以「智慧日報生成器」專案手把手演示六階段工作流。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492680&idx=1&sn=1925b1f9e8b1f4471a592723e3607af5&chksm=e9962605dee1af139ebcb569dbdcf0625350cff1d168bc43fe9c4a0064fe967ece91665a3966)〕
 
-**《Codex 快速入门：Harness 工程落地》（袁从德、吴军、陈文浩，人民邮电出版社）**〔进阶〕——国内首批 Codex 系统专著。针对「AI 编程工具已经足够强大，但很多团队仍不知道怎样稳定地用好它」的现实，讲清从「AI 代码生成」到「AI 工程协作」的转变，核心理念：让 AI 看到正确的信息，比写出一条漂亮提示词更重要。全书按「认知迁移→上下文工程→高频实战→团队落地」四阶段递进，示例围绕 emotional_chat 开源仓库展开，兼顾 Cursor、Trae 等主流工具。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492640&idx=1&sn=638190bae25948789112a12d57193484&chksm=e996266ddee1af7bc2c5fdff42afde70ef6b424b40ecbbf3c788cabe89b4422882e0d0283e70)〕
+**《Codex 快速入門：Harness 工程落地》（袁從德、吳軍、陳文浩，人民郵電出版社）**〔進階〕——國內首批 Codex 系統專著。針對「AI 程式設計工具已經足夠強大，但很多團隊仍不知道怎樣穩定地用好它」的現實，講清從「AI 程式碼生成」到「AI 工程協作」的轉變，核心理念：讓 AI 看到正確的資訊，比寫出一條漂亮提示詞更重要。全書按「認知遷移→上下文工程→高頻實戰→團隊落地」四階段遞進，示例圍繞 emotional_chat 開源倉庫展開，兼顧 Cursor、Trae 等主流工具。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492640&idx=1&sn=638190bae25948789112a12d57193484&chksm=e996266ddee1af7bc2c5fdff42afde70ef6b424b40ecbbf3c788cabe89b4422882e0d0283e70)〕
 
-**《软件设计的哲学（第二版）》（John Ousterhout，人民邮电出版社）**〔进阶〕——源自斯坦福 CS 190 课程的设计原则集：软件设计的本质是对复杂性的管理，问题分解是程序员的首要设计任务。提出「模块应该是深的」、信息隐藏、「通过定义来规避错误」、「先写注释」等原则与识别设计问题的危险信号，均来自作者编写约 25 万行代码、参与创建多个操作系统的一线实践。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247488526&idx=2&sn=122af6bf418154afc4822372d3583171&chksm=e995d643dee25f55b0f7e053d5abb628b703bb577516c54945373bb4426bf529de77e8d9cf6c)〕
+**《軟體設計的哲學（第二版）》（John Ousterhout，人民郵電出版社）**〔進階〕——源自斯坦福 CS 190 課程的設計原則集：軟體設計的本質是對複雜性的管理，問題分解是程式設計師的首要設計任務。提出「模組應該是深的」、資訊隱藏、「透過定義來規避錯誤」、「先寫註釋」等原則與識別設計問題的危險訊號，均來自作者編寫約 25 萬行程式碼、參與建立多個作業系統的一線實踐。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247488526&idx=2&sn=122af6bf418154afc4822372d3583171&chksm=e995d643dee25f55b0f7e053d5abb628b703bb577516c54945373bb4426bf529de77e8d9cf6c)〕
 
-**《图解 Skill：AI 提效实战指南》（宝玉，人民邮电出版社）**〔入门〕——一本「用 skill 写出来的 skill 书」：书中配图全部由作者自己开发和迭代的 book-illustrator skill 生成，本身就是「用 skill 写关于 skill 的书」的闭环。从 Skill 心智模型（第 1-2 章）、从零写 Skill 全流程（第 3 章）、提示词工程结合（第 4 章）到写作工作流串联（第 5 章）逐层进阶，并给出渐进式披露三层的 token 预算量化标准（frontmatter 30-100 / 正文至 5,000 / 参考层无上限），是「从入门到精通」的完整路径。〔[公众号原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492518&idx=1&sn=b9bd39b8debeba878909fb8112c33070&chksm=e99621ebdee1a8fdf853da4fb1b9b0df6132550b2a8d3303c533e39c8af4a024e73f64fc907c)〕
-## 选书标准的边界说明
+**《圖解 Skill：AI 提效實戰指南》（寶玉，人民郵電出版社）**〔入門〕——一本「用 skill 寫出來的 skill 書」：書中配圖全部由作者自己開發和迭代的 book-illustrator skill 生成，本身就是「用 skill 寫關於 skill 的書」的閉環。從 Skill 心智模型（第 1-2 章）、從零寫 Skill 全流程（第 3 章）、提示詞工程結合（第 4 章）到寫作工作流串聯（第 5 章）逐層進階，並給出漸進式披露三層的 token 預算量化標準（frontmatter 30-100 / 正文至 5,000 / 參考層無上限），是「從入門到精通」的完整路徑。〔[公眾號原文](https://mp.weixin.qq.com/s?__biz=MzI0OTIzOTMzMA==&mid=2247492518&idx=1&sn=b9bd39b8debeba878909fb8112c33070&chksm=e99621ebdee1a8fdf853da4fb1b9b0df6132550b2a8d3303c533e39c8af4a024e73f64fc907c)〕
+## 選書標準的邊界說明
 
-本合集的取舍基于三个原则，也意味着三个边界：
+本合集的取捨基於三個原則，也意味著三個邊界：
 
-1. **中文优先，经典原版注明**——绝大多数条目推荐中译本；确无中文版的经典（如《Generative AI in Action》）才以原版形式推荐。
-2. **理论书与实战书搭配**——每一层至少一本「原理书」；纯实战书（如纯工具教程）占比刻意压低，避免书单变成说明书堆砌。
-3. **无书章节用开源资源补位**——硬件、集群通信等迭代极快的层级，纸质书天然滞后，以开源课程与仓库文章替代，不硬凑书目。
+1. **中文優先，經典原版註明**——絕大多數條目推薦中譯本；確無中文版的經典（如《Generative AI in Action》）才以原版形式推薦。
+2. **理論書與實戰書搭配**——每一層至少一本「原理書」；純實戰書（如純工具教程）佔比刻意壓低，避免書單變成說明書堆砌。
+3. **無書章節用開源資源補位**——硬件、叢集通訊等迭代極快的層級，紙質書天然滯後，以開源課程與倉庫文章替代，不硬湊書目。
 
-## 说明
+## 說明
 
-- 本合集素材来自公众号「AI 原力注入」好书推荐专辑（[合集链接](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzI0OTIzOTMzMA==&action=getalbum&album_id=3377874180926619650)）2023-11 至今的 49 篇文章，单本详情可回看对应原文。
-- 书目信息（书名、作者、出版社、版本）依据公开渠道整理核实，个别条目的版本信息以出版方为准。
-- 章节体系与 [AI Fundamentals](https://github.com/ForceInjection/AI-fundamentals) 仓库完全对应，仓库内每章有源码级深度文章可作书目之外的延伸阅读。
+- 本合集素材來自公眾號「AI 原力注入」好書推薦專輯（[合集連結](https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzI0OTIzOTMzMA==&action=getalbum&album_id=3377874180926619650)）2023-11 至今的 49 篇文章，單本詳情可回看對應原文。
+- 書目資訊（書名、作者、出版社、版本）依據公開渠道整理核實，個別條目的版本資訊以出版方為準。
+- 章節體系與 [AI Fundamentals](https://github.com/ForceInjection/AI-fundamentals) 倉庫完全對應，倉庫內每章有原始碼級深度文章可作書目之外的延伸閱讀。
 
 ---
 
-> **写在最后**：这张地图会随公众号持续更新——每当值得读的新书出现，会按对应层级补充进去。你现在卡在哪一层？欢迎在评论区告诉我，也可以直接去 [AI Fundamentals](https://github.com/ForceInjection/AI-fundamentals) 仓库按章节体系展开阅读。
+> **寫在最後**：這張地圖會隨公眾號持續更新——每當值得讀的新書出現，會按對應層級補充進去。你現在卡在哪一層？歡迎在評論區告訴我，也可以直接去 [AI Fundamentals](https://github.com/ForceInjection/AI-fundamentals) 倉庫按章節體系展開閱讀。
