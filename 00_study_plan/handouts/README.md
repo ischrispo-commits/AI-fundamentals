@@ -26,3 +26,4 @@ handouts/
 | 2   | 2   | [d02_pcie_topology_numa.md](w02/d02_pcie_topology_numa.md) | PCIe 拓撲層級、Switch vs Bridge、P2P 路徑、雙路 CPU 與 NUMA | 2026-11-24 |
 | 2   | 3   | [d03_nvlink_nvswitch_c2c.md](w02/d03_nvlink_nvswitch_c2c.md) | NVLink 物理層與記憶體語義、NVSwitch、SHARP、NVLink-C2C | 2026-11-24 |
 | 2   | 4   | [d04_gpudirect_dma.md](w02/d04_gpudirect_dma.md) | DMA 委託模型、GPUDirect P2P／RDMA／Storage、GDS 前提與「兩倍」口徑 | 2026-11-24 |
+| 2   | 5   | [d05_hgx_data_path.md](w02/d05_hgx_data_path.md) | 整合：HGX 八卡資料路徑、為什麼 1 GPU 配 1 NIC、拓撲實查、CXL 一瞥 | 2026-11-24 |

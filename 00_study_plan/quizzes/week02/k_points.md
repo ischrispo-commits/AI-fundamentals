@@ -52,3 +52,16 @@ W02D04-K6 | 3 | GDS 前提：ACS bypass、`iommu=pt`、O_DIRECT 開檔；任一�
 W02D04-K7 | 4 | Gen4 x4 NVMe 讀進 GPU：buffered 約 3.5、O_DIRECT 約 7、GDS 約 7 GB/s；NVMe 本身是瓶頸時 GDS 頻寬不一定提升，收益在少一次 PCIe 穿越與 CPU 卸載；「至少兩倍」是路徑判斷而非通用倍數 | 01_hardware_architecture/performance/05_pcie_nvlink_speed_reference.md:94-96；01_gpudirect_technology.md:174 | CxO、TAM
 W02D04-K8 | 3 | copy engine 適合大塊、可與計算重疊的複製；A100 HBM 內複製實測 copy engine 約 818 GB/s（峰值 40%）、SM 複製約 1453 GB/s（71%），copy engine 數字不能當 HBM 峰值 | 01_dma_engine.md:60,119-122 | 工程師
 ```
+
+## D5（11/27）整合：HGX 八卡資料路徑、網卡配置、拓撲實查、CXL 一瞥
+
+```text
+W02D05-K1 | 2 | 八卡伺服器三種路：GPU 對 GPU 走 NVLink（機內 scale-up，NVLink 4.0 每卡雙向 900 GB/s）；伺服器之間走網卡（scale-out）；CPU 與 GPU 之間走 PCIe（Gen5 x16 單向約 63 GB/s） | 01_hardware_architecture/nvlink/nvlink_intro.md:59,234；01_hardware_architecture/performance/05_pcie_nvlink_speed_reference.md:93 | 工程師、CxO
+W02D05-K2 | 3 | 實測八卡 H100：2 × Xeon 8468、8 × ConnectX-7（HDR 200 Gb/s），GPU0 與 NIC0 同一顆 PCIe Switch（PIX）；1 GPU 配 1 NIC 讓每張 GPU 有不經 CPU 的跨機通道 | 01_hardware_architecture/gpudirect/04_gpudirect_rdma_verification.md:9-20 | TAM、業務
+W02D05-K3 | 3 | PCIe Gen5 x16 約 64 GB/s 可撐 1 埠 NDR 400 Gb/s（50 GB/s）；Gen4 x16 約 32 GB/s 撐不住 NDR，只夠單埠 HDR；ConnectX-7 是 PCIe 5.0 裝置 | 03_ai_cluster_ops/02_infiniband/01_ib_network_theory.md:1694-1696 | 工程師、TAM
+W02D05-K4 | 2 | 兩台 H100 跨節點實測：單埠 HDR ib_write_bw 196 Gb/s（24.5 GB/s）；NCCL all-reduce Bus BW 45.8 GB/s，等效單向約 23 GB/s | 04_gpudirect_rdma_verification.md:121-126 | 工程師
+W02D05-K5 | 2 | nvidia-smi topo 的 PIX、PXB、PHB 是橋接層級分類，與 NUMA 無關；只有 NODE、SYS 編碼 NUMA／socket 資訊 | 01_hardware_architecture/performance/02_single_gpu_topology_analysis.md:106-116 | TAM
+W02D05-K6 | 2 | GPU 閒置時 PCIe 鏈路降到 Gen1 省電，負載下才恢復 Gen5；看到 Gen1 先在負載下複查 | 02_single_gpu_topology_analysis.md:12 | TAM
+W02D05-K7 | 3 | 容器常遮住 NUMA 效應：實測跨 NUMA 與本地 H2D 都約 52.6 GB/s，因容器限制 membind；裸機預期差約 2.1 倍 | 02_single_gpu_topology_analysis.md:162-167 | TAM、工程師
+W02D05-K8 | 3 | CXL 沿用 PCIe 實體層，加上 CXL.cache 與 CXL.mem（Type 1／2／3 裝置）；每引腳頻寬約 DDR 的 8 倍、閒置延遲約 2 倍，主流用法是冷記憶體層擴容量，甜蜜點在機架內、不取代乙太網 | 01_hardware_architecture/pcie/08_cxl_interconnect_overview.md:50,159-161 | 工程師、PMM
+```
