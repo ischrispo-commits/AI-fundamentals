@@ -39,3 +39,16 @@ W02D03-K6 | 3 | GH200 = 1 Grace CPU + 1 Hopper GPU：96 GB HBM3 + 最多 480 GB 
 W02D03-K7 | 3 | 同樣寫 900 GB/s：GH200 是 CPU 對 GPU 的 NVLink-C2C，HGX H100 是每張 GPU 的 NVLink 4.0（GPU 對 GPU）；引用時先說清連的是哪兩顆晶片 | nvlink_c2c.md:268-281 | 業務、TMM
 W02D03-K8 | 1 | GB200 NVL72 用 9 個 NVSwitch Tray（每個 2 顆 Gen4 NVSwitch）連接 72 顆 GPU，機架內用 5000 多根銅纜背板而非光模組 | nvlink_intro.md:170-175 | PMM、CxO
 ```
+
+## D4（11/26）GPUDirect P2P／RDMA／Storage、DMA engine
+
+```text
+W02D04-K1 | 2 | DMA 是委託：CPU／驅動把來源、目的、長度寫成 descriptor 交給 DMA engine 搬運，控制面在 CPU、資料面在 engine；GPU 的 copy engine 是 DMA engine 的一種；零複製是去掉 CPU 中轉緩衝區，DMA 仍在 | 01_hardware_architecture/dma/01_dma_engine.md:11-15,130 | 工程師
+W02D04-K2 | 2 | GPUDirect P2P 把 GPU 間傳輸從兩跳（D2H + H2D 經系統記憶體）縮成一跳；A100 實測 NVLink P2P 單向 239.28 GB/s，經 CPU 中轉約 11.76 GB/s | 01_hardware_architecture/gpudirect/02_gpudirect_p2p.md:98-104；01_dma_engine.md:117-118 | 工程師、CxO
+W02D04-K3 | 2 | P2P 路徑優劣：NV# 最佳、PIX 次之、PXB 良好、PHB 一般、NODE 受限、SYS（跨 NUMA）不支援 GPUDirect P2P | 02_gpudirect_p2p.md:260-266 | TAM、工程師
+W02D04-K4 | 2 | GPUDirect RDMA 讓網卡透過 PCIe BAR 直接讀寫 GPU 顯存，資料不經 CPU 記憶體；路徑只經 PCIe Switch 最佳，跨 CPU socket 可能嚴重受限；IOMMU 須關閉或 1:1 passthrough | 01_hardware_architecture/gpudirect/01_gpudirect_technology.md:13,35-44 | 工程師、TAM
+W02D04-K5 | 2 | 傳統讀檔到 GPU 三步：NVMe → page cache → 使用者緩衝區（CPU 複製）→ H2D；PCIe 走兩趟。GDS 讓 NVMe 的 DMA 直接寫入 GPU 顯存，只走一趟 | 01_gpudirect_technology.md:122-132,160-162 | 工程師
+W02D04-K6 | 3 | GDS 前提：ACS bypass、`iommu=pt`、O_DIRECT 開檔；任一不符，libcufile 自動退回系統記憶體中轉的相容模式 | 01_gpudirect_technology.md:166-168 | TAM
+W02D04-K7 | 4 | Gen4 x4 NVMe 讀進 GPU：buffered 約 3.5、O_DIRECT 約 7、GDS 約 7 GB/s；NVMe 本身是瓶頸時 GDS 頻寬不一定提升，收益在少一次 PCIe 穿越與 CPU 卸載；「至少兩倍」是路徑判斷而非通用倍數 | 01_hardware_architecture/performance/05_pcie_nvlink_speed_reference.md:94-96；01_gpudirect_technology.md:174 | CxO、TAM
+W02D04-K8 | 3 | copy engine 適合大塊、可與計算重疊的複製；A100 HBM 內複製實測 copy engine 約 818 GB/s（峰值 40%）、SM 複製約 1453 GB/s（71%），copy engine 數字不能當 HBM 峰值 | 01_dma_engine.md:60,119-122 | 工程師
+```
