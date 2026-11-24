@@ -61,4 +61,6 @@ W01D05-K2 | 3 | 傳輸時間 = Latency + Size ÷ Bandwidth；小資料看延遲�
 W01D05-K3 | 4 | 推理 decode 在典型小 batch、長上下文下受記憶體頻寬限制，因此 HBM 容量與頻寬（如 H200 141 GB／4.8 TB/s）常比 TFLOPS 更決定推理能跑多大；大 batch 可能轉為 compute-bound | 10_ai_related_course/kv_cache_course/01-kv-cache-basics/syllabus.md:52-53；05_pcie_nvlink_speed_reference.md:48-62 | CxO、PMM
 W01D05-K4 | 3 | NVLink 必要場景：張量並行（每層 all-reduce）、MoE all-to-all、超過單卡顯存的模型；非必要：單卡推理、資料並行（瓶頸在節點間網路）、小模型 LoRA | nvlink_intro.md:217-229 | TAM、業務
 W01D05-K5 | 3 | MIG 用於多租戶推理可避免多個服務競爭同一 GPU；一張 A100-80GB 可切 7 × 1g.10gb | 07_a100_architecture.md:136-150 | TAM
+W01D05-K6 | 2 | 消費卡與工作站卡的限制：RTX 5090 為 32 GB GDDR7、1.79 TB/s，L40S 為 48 GB GDDR6、864 GB/s，兩者都沒有 NVLink，多卡之間只能走 PCIe | 05_pcie_nvlink_speed_reference.md:57-61 | 業務、TAM
+W01D05-K7 | 2 | 跨機通訊（網路）比機內通訊（NVLink）延遲大 10～100 倍；每跨一層延遲金字塔，延遲增加約 1～2 個數量級 | ai_latency_pyramid.md:101,156 | 工程師、CxO
 ```
